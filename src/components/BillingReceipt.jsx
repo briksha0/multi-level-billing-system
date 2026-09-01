@@ -1,3 +1,4 @@
+// src/components/receipts/BillingReceipt.jsx
 import { Printer } from 'lucide-react'
 
 export default function BillingReceipt({ selectedBill, currentBillItems, getUserById, getProductById, onClose }) {
@@ -5,13 +6,14 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
 
   const buyer = selectedBill.buyerId ? getUserById(selectedBill.buyerId) : null
   const buyerName = buyer?.name || selectedBill.buyerName || selectedBill.buyer_name || 'Retail / Partner Buyer'
-  const formattedBillDate = selectedBill.billDate || selectedBill.created_at || selectedBill.date 
-    ? new Date(selectedBill.billDate || selectedBill.created_at || selectedBill.date).toLocaleDateString() 
+  const formattedBillDate = selectedBill.billDate || selectedBill.created_at || selectedBill.date
+    ? new Date(selectedBill.billDate || selectedBill.created_at || selectedBill.date).toLocaleDateString()
     : '-'
-  
+
   let totalTaxable = 0
   let totalCgst = 0
   let totalSgst = 0
+  let grandTotalAmount = 0
 
   const taxSummaryMap = {}
   currentBillItems.forEach(item => {
@@ -21,10 +23,12 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
     const gstAmt = taxableAmt * 0.18
     const cgstAmt = gstAmt / 2
     const sgstAmt = gstAmt / 2
+    const itemTotalWithGst = taxableAmt + gstAmt
 
     totalTaxable += taxableAmt
     totalCgst += cgstAmt
     totalSgst += sgstAmt
+    grandTotalAmount += itemTotalWithGst
 
     if (!taxSummaryMap[hsn]) {
       taxSummaryMap[hsn] = { taxable: 0, cgst: 0, sgst: 0 }
@@ -40,10 +44,10 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
 
   return (
     <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4 overflow-y-auto print:p-0 print:bg-white print:inset-auto">
-      
+
       {/* Container forced precisely to A4 dimensions (210mm x 297mm) */}
       <div className="bg-white text-slate-900 rounded-2xl p-10 w-full max-w-[210mm] min-h-[200mm] shadow-2xl relative flex flex-col justify-between print:m-10 print:p-10 print:shadow-none print:w-[297mm] print:h-[430mm] print:max-w-none print:rounded-none">
-        
+
         {/* Top Header Action Controls (Hidden on print) */}
         <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-200 print:hidden">
           <h3 className="text-xl font-bold text-slate-900 font-mono">Invoice #{selectedBill.billNumber || selectedBill.bill_number}</h3>
@@ -59,7 +63,7 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
 
         {/* Main Content Area */}
         <div className="space-y-6 text-sm flex-1">
-          
+
           {/* Company Details & Invoice Info Header */}
           <div className="flex justify-between items-start border-b border-slate-300 pb-5">
             <div className="flex items-start gap-4">
@@ -124,11 +128,15 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
                   )
                 })}
               </tbody>
+              <tfoot>
+                <tr className="bg-slate-50 text-slate-800">
+                  <td colSpan="7" className="p-2.5 text-right text-[11px] font-bold uppercase tracking-wider">Total Amount</td>
+                  <td className="p-2.5 text-right font-bold text-slate-900">₹{grandTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
 
-        
-          
         </div>
 
         {/* Footer: Bank Details & Authorized Signatory */}
@@ -139,7 +147,7 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
             <p className="text-[11px] text-slate-600"><strong>A/C No.:</strong> 50200101304925</p>
             <p className="text-[11px] text-slate-600"><strong>IFSC:</strong> HDFC0002679</p>
           </div>
-          
+
           <div className="text-right">
             <p className="text-xs font-bold text-slate-900">For Aquaura Essentials LLP</p>
             <div className="h-10"></div>

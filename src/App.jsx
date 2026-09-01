@@ -15,7 +15,6 @@ import AdminProducts from './pages/admin/AdminProducts.jsx'
 import AdminStock from './pages/admin/AdminStock.jsx'
 import AdminBilling from './pages/admin/AdminBilling.jsx'
 import AdminReports from './pages/admin/AdminReports.jsx'
-import AdminStockTransfer from './pages/admin/AdminStockTransfer.jsx'
 // SS Pages
 import SSDashboard from './pages/ss/SSDashboard.jsx'
 import SSNetwork from './pages/ss/SSNetwork.jsx'
@@ -54,7 +53,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<RoleRedirect />} />
-          
+
           {/* Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['ADMIN']}><AdminLayout /></ProtectedRoute>}>
             <Route index element={<Navigate to="dashboard" replace />} />
@@ -64,9 +63,8 @@ export default function App() {
             <Route path="stock" element={<AdminStock />} />
             <Route path="billing" element={<AdminBilling />} />
             <Route path="reports" element={<AdminReports />} />
-            <Route path="transfer" element={<AdminStockTransfer />} />
           </Route>
-          
+
           {/* SS Routes */}
           <Route path="/ss" element={<ProtectedRoute allowedRoles={['ADMIN', 'SS']}><SSLayout /></ProtectedRoute>}>
             <Route index element={<Navigate to="dashboard" replace />} />
@@ -76,7 +74,7 @@ export default function App() {
             <Route path="billing" element={<SSBilling />} />
             <Route path="reports" element={<SSReports />} />
           </Route>
-          
+
           {/* Distributor Routes */}
           <Route path="/distributor" element={<ProtectedRoute allowedRoles={['ADMIN', 'SS', 'DISTRIBUTOR']}><DistributorLayout /></ProtectedRoute>}>
             <Route index element={<Navigate to="dashboard" replace />} />
@@ -86,9 +84,9 @@ export default function App() {
             <Route path="billing" element={<DistributorBilling />} />
             <Route path="reports" element={<DistributorReports />} />
           </Route>
-          
-          
-          
+
+
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </DataProvider>

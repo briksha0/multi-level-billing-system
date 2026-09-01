@@ -92,8 +92,8 @@ export function DataProvider({ children }) {
       const stock = await api.getStock(userId)
       const stockObj = {}
       if (Array.isArray(stock)) {
-        stock.forEach(s => { 
-          stockObj[Number(s.product_id || s.productId)] = Number(s.quantity) || 0 
+        stock.forEach(s => {
+          stockObj[Number(s.product_id || s.productId)] = Number(s.quantity) || 0
         })
       }
       return stockObj
@@ -191,6 +191,18 @@ export function DataProvider({ children }) {
     }
   }, [])
 
+  // Delete user
+  const deleteUser = useCallback(async (userId) => {
+    try {
+      const result = await api.deleteUser(userId)
+      const users = await api.getUsers()
+      setData(prev => ({ ...prev, users }))
+      return result
+    } catch (err) {
+      throw err
+    }
+  }, [])
+
   // Add product
   const addProduct = useCallback(async (productData) => {
     try {
@@ -261,6 +273,7 @@ export function DataProvider({ children }) {
       getPendingPayments,
       createBill,
       addUser,
+      deleteUser,
       addProduct,
       updateProduct,
       addOpeningStock,

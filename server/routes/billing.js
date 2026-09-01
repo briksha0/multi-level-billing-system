@@ -39,7 +39,7 @@ router.get('/', async (req, res) => {
     const { type = 'sales', limit = 100 } = req.query;
     const userId = req.user.id;
     const limitInt = parseInt(limit, 10);
-    
+
     let result;
     if (type === 'sales') {
       result = await db.query(`
@@ -62,7 +62,7 @@ router.get('/', async (req, res) => {
         LIMIT $2
       `, [userId, limitInt]);
     }
-    
+
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching bills:', err);
@@ -82,24 +82,24 @@ router.get('/:billId', async (req, res) => {
       JOIN users seller ON b.seller_id = seller.id
       WHERE b.id = $1
     `, [req.params.billId]);
-    
+
     const bill = billResult.rows[0];
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
-    
+
     // Permission check
     if (bill.seller_id !== req.user.id && bill.buyer_id !== req.user.id && req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Access denied' });
     }
-    
+
     const itemsResult = await db.query(`
       SELECT bi.*, p.name as product_name, p.sku, p.unit
       FROM bill_items bi
       JOIN products p ON bi.product_id = p.id
       WHERE bi.bill_id = $1
     `, [req.params.billId]);
-    
+
     const paymentsResult = await db.query('SELECT * FROM payments WHERE bill_id = $1 ORDER BY created_at DESC', [req.params.billId]);
-    
+
     res.json({ ...bill, items: itemsResult.rows, payments: paymentsResult.rows });
   } catch (err) {
     console.error('Error fetching bill details:', err);
@@ -107,185 +107,233 @@ router.get('/:billId', async (req, res) => {
   }
 });
 
+// Resolve the concrete bill type for the current seller and validate the buyer
+async function resolveBillType(user, buyerId) {
+  if (user.role === 'ADMIN') {
+    if (!buyerId) return { status: 400, error: 'Buyer is required' };
+    if (!(await validateBuyer(user.id, buyerId, user.role))) {
+      return { status: 403, error: 'Admin can only bill to Super Stores' };
+    }
+    return { billType: 'ADMIN_TO_SS' };
+  }
+  if (user.role === 'SS') {
+    if (!buyerId) return { status: 400, error: 'Buyer is required' };
+    if (!(await validateBuyer(user.id, buyerId, user.role))) {
+      return { status: 403, error: 'Invalid buyer - must be your distributor or retailer' };
+    }
+    const buyerResult = await db.query('SELECT role FROM users WHERE id =1', [buyerId]);
+    const buyer = buyerResult.rows[0];
+    if (!buyer) return { status: 400, error: 'Invalid buyer' };
+    return { billType: buyer.role === 'DISTRIBUTOR' ? 'SS_TO_DIST' : 'SS_TO_RETAIL' };
+  }
+  if (user.role === 'DISTRIBUTOR') {
+    if (!buyerId) return { status: 400, error: 'Buyer is required' };
+    if (!(await validateBuyer(user.id, buyerId, user.role))) {
+      return { status: 403, error: 'Invalid buyer - must be your retailer' };
+    }
+    return { billType: 'DIST_TO_RETAIL' };
+  }
+  if (user.role === 'RETAILER') {
+    return { billType: 'RETAIL_TO_CUSTOMER' };
+  }
+  return { status: 403, error: 'Unsupported role' };
+}
+
+// Validate that the seller has enough stock for every requested item
+async function validateStockAvailability(sellerId, items) {
+  for (const item of items) {
+    const stockResult = await db.query('SELECT quantity FROM stock WHERE user_id = $1 AND product_id = $2', [sellerId, item.productId]);
+    const stock = stockResult.rows[0];
+    if (!stock || stock.quantity < item.quantity) {
+      const prodResult = await db.query('SELECT name FROM products WHERE id = $1', [item.productId]);
+      const product = prodResult.rows[0];
+      return { error: `Insufficient stock for ${product?.name || 'product'}. Available: ${stock?.quantity || 0}, Requested: ${item.quantity}` };
+    }
+  }
+  return { ok: true };
+}
+
+// Compute per-item rates, GST (18%), and the bill totals for a given bill type
+async function computeBillTotals(actualBillType, items, discount, paidAmount) {
+  let subtotal = 0;
+  let totalGst = 0;
+  const billItems = [];
+
+  for (const item of items) {
+    const prodResult = await db.query('SELECT ss_price, distributor_price, retail_price, mrp FROM products WHERE id = $1', [item.productId]);
+    const product = prodResult.rows[0];
+
+    let defaultRate = 0;
+    switch (actualBillType) {
+      case 'ADMIN_TO_SS': defaultRate = product.ss_price; break;
+      case 'SS_TO_DIST': defaultRate = product.distributor_price; break;
+      case 'SS_TO_RETAIL':
+      case 'DIST_TO_RETAIL': defaultRate = product.retail_price; break;
+      case 'RETAIL_TO_CUSTOMER': defaultRate = product.mrp; break;
+      default: defaultRate = product.mrp;
+    }
+
+    const rate = Number(item.rate || defaultRate);
+    const quantity = Number(item.quantity);
+    const itemSubtotal = quantity * rate;
+    const gstRate = item.gst !== undefined ? Number(item.gst) : 18; // Default to 18% GST
+    const itemGst = itemSubtotal * (gstRate / 100);
+
+    subtotal += itemSubtotal;
+    totalGst += itemGst;
+
+    billItems.push({
+      ...item,
+      quantity,
+      rate,
+      gstRate,
+      gstAmount: itemGst,
+      amount: itemSubtotal + itemGst
+    });
+  }
+
+  const discountAmount = Number(discount) || 0;
+  const taxableAmount = Math.max(0, subtotal - discountAmount);
+  const grandTotal = taxableAmount + totalGst;
+  const finalPaid = Math.min(Number(paidAmount) || 0, grandTotal);
+  const dueAmount = Math.max(0, grandTotal - finalPaid);
+  const paymentStatus = dueAmount === 0 ? 'PAID' : finalPaid > 0 ? 'PARTIAL' : 'PENDING';
+
+  return { subtotal, totalGst, billItems, discountAmount, grandTotal, finalPaid, dueAmount, paymentStatus };
+}
+
+// Generate the next bill number for today's date
+async function generateBillNumber(todayStr) {
+  const countResult = await db.query('SELECT COUNT(*) as count FROM bills WHERE bill_date = $1', [todayStr]);
+  return `BILL-${todayStr.replace(/-/g, '')}-${String(parseInt(countResult.rows[0].count, 10) + 1).padStart(4, '0')}`;
+}
+
 // Create bill
 router.post('/', async (req, res) => {
-  const client = await db.connect();
+  const { buyerId, customerName, items, discount = 0, paidAmount = 0, paymentMethod = 'Cash' } = req.body;
+
+  // ---- All validation happens BEFORE a pooled connection is acquired ----
+  if (!items || items.length === 0) {
+    return res.status(400).json({ error: 'At least one item is required' });
+  }
+
   try {
-    const { buyerId, customerName, items, discount = 0, paidAmount = 0, paymentMethod = 'Cash', billType } = req.body;
-    
-    if (!items || items.length === 0) {
-      client.release();
-      return res.status(400).json({ error: 'At least one item is required' });
+    // Validate bill type and buyer
+    const resolved = await resolveBillType(req.user, buyerId);
+    if (resolved.error) {
+      return res.status(resolved.status).json({ error: resolved.error });
     }
-    
-    // Validate bill type and buyer 
-    let actualBillType = billType;
-    if (req.user.role === 'ADMIN') {
-      if (!buyerId) {
-        client.release();
-        return res.status(400).json({ error: 'Buyer is required' });
-      }
-      if (!(await validateBuyer(req.user.id, buyerId, req.user.role))) {
-        client.release();
-        return res.status(403).json({ error: 'Admin can only bill to Super Stores' });
-      }
-      actualBillType = 'ADMIN_TO_SS';
-    } else if (req.user.role === 'SS') {
-      if (!buyerId) {
-        client.release();
-        return res.status(400).json({ error: 'Buyer is required' });
-      }
-      if (!(await validateBuyer(req.user.id, buyerId, req.user.role))) {
-        client.release();
-        return res.status(403).json({ error: 'Invalid buyer - must be your distributor or retailer' });
-      }
-      const buyerResult = await db.query('SELECT role FROM users WHERE id = $1', [buyerId]);
-      actualBillType = buyerResult.rows[0].role === 'DISTRIBUTOR' ? 'SS_TO_DIST' : 'SS_TO_RETAIL';
-    } else if (req.user.role === 'DISTRIBUTOR') {
-      if (!buyerId) {
-        client.release();
-        return res.status(400).json({ error: 'Buyer is required' });
-      }
-      if (!(await validateBuyer(req.user.id, buyerId, req.user.role))) {
-        client.release();
-        return res.status(403).json({ error: 'Invalid buyer - must be your retailer' });
-      }
-      actualBillType = 'DIST_TO_RETAIL';
-    } else if (req.user.role === 'RETAILER') {
-      actualBillType = 'RETAIL_TO_CUSTOMER';
-    }
-    
+    const actualBillType = resolved.billType;
+
     // Validate stock availability
-    for (const item of items) {
-      const stockResult = await db.query('SELECT quantity FROM stock WHERE user_id = $1 AND product_id = $2', [req.user.id, item.productId]);
-      const stock = stockResult.rows[0];
-      if (!stock || stock.quantity < item.quantity) {
-        const prodResult = await db.query('SELECT name FROM products WHERE id = $1', [item.productId]);
-        const product = prodResult.rows[0];
-        client.release();
-        return res.status(400).json({ 
-          error: `Insufficient stock for ${product?.name || 'product'}. Available: ${stock?.quantity || 0}, Requested: ${item.quantity}` 
-        });
-      }
+    const stockCheck = await validateStockAvailability(req.user.id, items);
+    if (stockCheck.error) {
+      return res.status(400).json({ error: stockCheck.error });
     }
-    
-    // Calculate totals with dynamic tier pricing
-    let subtotal = 0;
-    let totalGst = 0;
-    const billItems = [];
-    
-    for (const item of items) {
-      const prodResult = await db.query('SELECT ss_price, distributor_price, retail_price, mrp FROM products WHERE id = $1', [item.productId]);
-      const product = prodResult.rows[0];
-      
-      let defaultRate = 0;
-      switch (actualBillType) {
-        case 'ADMIN_TO_SS': defaultRate = product.ss_price; break;
-        case 'SS_TO_DIST': defaultRate = product.distributor_price; break;
-        case 'SS_TO_RETAIL': 
-        case 'DIST_TO_RETAIL': defaultRate = product.retail_price; break;
-        case 'RETAIL_TO_CUSTOMER': defaultRate = product.mrp; break;
-        default: defaultRate = product.mrp;
-      }
-      
-      const rate = item.rate || defaultRate;
-      const itemTotal = item.quantity * rate;
-      const gstRate = item.gst || 0; 
-      const itemGst = itemTotal * gstRate / 100;
-      
-      subtotal += itemTotal;
-      totalGst += itemGst;
-      
-      billItems.push({ ...item, rate, gst: gstRate, amount: itemTotal + itemGst });
-    }
-    
-    const grandTotal = subtotal - discount + totalGst;
-    const finalPaid = Math.min(paidAmount, grandTotal);
-    const dueAmount = grandTotal - finalPaid;
-    const paymentStatus = dueAmount === 0 ? 'PAID' : finalPaid > 0 ? 'PARTIAL' : 'PENDING';
-    
+
+    // Calculate subtotal, GST, and totals
+    const {
+      subtotal, totalGst, billItems, discountAmount, grandTotal, finalPaid, dueAmount, paymentStatus
+    } = await computeBillTotals(actualBillType, items, discount, paidAmount);
+
     // Generate bill number
     const todayStr = new Date().toISOString().split('T')[0];
-    const todayCode = todayStr.replace(/-/g, '');
-    const countResult = await db.query('SELECT COUNT(*) as count FROM bills WHERE bill_date = $1', [todayStr]);
-    const billNumber = `BILL-${todayCode}-${String(parseInt(countResult.rows[0].count, 10) + 1).padStart(4, '0')}`;
-    
+    const billNumber = await generateBillNumber(todayStr);
+
     // ==========================================
     // PostgreSQL Transaction Handling
     // ==========================================
-    await client.query('BEGIN');
-    
-    // 1. Create bill
-    const billResult = await client.query(`
+    const client = await db.connect();
+    let transactionStarted = false;
+    try {
+      await client.query('BEGIN');
+      transactionStarted = true;
+
+      // 1. Create bill header with subtotal, discount, gst, and grand total
+      const billResult = await client.query(`
       INSERT INTO bills (bill_number, bill_date, seller_id, buyer_id, customer_name, bill_type, subtotal, discount, gst, grand_total, paid_amount, due_amount, payment_status, payment_method, created_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING id
     `, [
-      billNumber, todayStr, req.user.id, buyerId || null, customerName || null,
-      actualBillType, subtotal, discount, totalGst, grandTotal,
-      finalPaid, dueAmount, paymentStatus, paymentMethod, req.user.id
-    ]);
-    
-    const billId = billResult.rows[0].id;
-    
-    // 2. Insert bill items
-    for (const item of billItems) {
-      await client.query(
-        'INSERT INTO bill_items (bill_id, product_id, quantity, rate, gst, amount) VALUES ($1, $2, $3, $4, $5, $6)',
-        [billId, item.productId, item.quantity, item.rate, item.gst, item.amount]
-      );
-    }
-    
-    // 3. Update stock - deduct from seller
-    for (const item of billItems) {
-      await client.query(
-        'UPDATE stock SET quantity = quantity - $1 WHERE user_id = $2 AND product_id = $3',
-        [item.quantity, req.user.id, item.productId]
-      );
-    }
-    
-    // 4. Update stock - add to buyer (if not retail to customer)
-    if (buyerId && actualBillType !== 'RETAIL_TO_CUSTOMER') {
-      for (const item of billItems) {
-        await client.query(`
-          INSERT INTO stock (user_id, product_id, quantity) 
-          VALUES ($1, $2, $3) 
-          ON CONFLICT (user_id, product_id) DO UPDATE SET quantity = stock.quantity + $4
-        `, [buyerId, item.productId, item.quantity, item.quantity]);
-      }
-      
-      // 5. Create stock transactions
+        billNumber, todayStr, req.user.id, buyerId || null, customerName || null,
+        actualBillType, subtotal, discountAmount, totalGst, grandTotal,
+        finalPaid, dueAmount, paymentStatus, paymentMethod, req.user.id
+      ]);
+
+      const billId = billResult.rows[0].id;
+
+      // 2. Insert bill items with explicit item-level GST and amount records
       for (const item of billItems) {
         await client.query(
-          'INSERT INTO stock_transactions (date, from_id, to_id, product_id, quantity, type, bill_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-          [todayStr, req.user.id, buyerId, item.productId, item.quantity, 'OUT', billId]
+          'INSERT INTO bill_items (bill_id, product_id, quantity, rate, gst, amount) VALUES ($1, $2, $3, $4, $5, $6)',
+          [billId, item.productId, item.quantity, item.rate, item.gstAmount, item.amount]
         );
       }
-    }
-    
-    // 6. Create payment record if paid
-    if (finalPaid > 0) {
-      await client.query(
-        'INSERT INTO payments (bill_id, amount, method, date) VALUES ($1, $2, $3, $4)',
-        [billId, finalPaid, paymentMethod, todayStr]
-      );
-    }
-    
-    await client.query('COMMIT');
-    client.release(); 
-    
-    res.status(201).json({ 
-      success: true, 
-      billId, 
-      billNumber, 
-      message: 'Bill created successfully, stock updated automatically' 
-    });
 
+      // 3. Update stock - deduct from seller
+      for (const item of billItems) {
+        await client.query(
+          'UPDATE stock SET quantity = quantity - $1 WHERE user_id = $2 AND product_id = $3',
+          [item.quantity, req.user.id, item.productId]
+        );
+      }
+
+      // 4. Update stock - add to buyer (if not retail to customer)
+      if (buyerId && actualBillType !== 'RETAIL_TO_CUSTOMER') {
+        for (const item of billItems) {
+          await client.query(`
+          INSERT INTO stock (user_id, product_id, quantity)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (user_id, product_id) DO UPDATE SET quantity = stock.quantity + $4
+        `, [buyerId, item.productId, item.quantity, item.quantity]);
+        }
+
+        // 5. Create stock transactions
+        for (const item of billItems) {
+          await client.query(
+            'INSERT INTO stock_transactions (date, from_id, to_id, product_id, quantity, type, bill_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [todayStr, req.user.id, buyerId, item.productId, item.quantity, 'OUT', billId]
+          );
+        }
+      }
+
+      // 6. Create payment record if paid
+      if (finalPaid > 0) {
+        await client.query(
+          'INSERT INTO payments (bill_id, amount, method, date) VALUES ($1, $2, $3, $4)',
+          [billId, finalPaid, paymentMethod, todayStr]
+        );
+      }
+
+      await client.query('COMMIT');
+      transactionStarted = false;
+
+      return res.status(201).json({
+        success: true,
+        billId,
+        billNumber,
+        subtotal,
+        gst: totalGst,
+        grandTotal,
+        message: 'Bill created successfully with subtotal and GST saved to database'
+      });
+
+    } catch (err) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackErr) {
+          console.error('Bill rollback error:', rollbackErr);
+        }
+      }
+      console.error('Bill creation error:', err);
+      return res.status(500).json({ error: 'Failed to create bill and save GST records' });
+    } finally {
+      client.release();
+    }
   } catch (err) {
-    await client.query('ROLLBACK');
-    client.release();
     console.error('Bill creation error:', err);
-    res.status(500).json({ error: 'Failed to create bill' });
+    return res.status(500).json({ error: 'Failed to create bill and save GST records' });
   }
 });
 
@@ -298,41 +346,41 @@ router.post('/:billId/payments', async (req, res) => {
       client.release();
       return res.status(400).json({ error: 'Valid amount is required' });
     }
-    
+
     const billResult = await client.query('SELECT * FROM bills WHERE id = $1', [req.params.billId]);
     const bill = billResult.rows[0];
     if (!bill) {
       client.release();
       return res.status(404).json({ error: 'Bill not found' });
     }
-    
+
     if (bill.seller_id !== req.user.id && req.user.role !== 'ADMIN') {
       client.release();
       return res.status(403).json({ error: 'Access denied' });
     }
-    
+
     const actualPayment = Math.min(amount, parseFloat(bill.due_amount));
     const todayStr = new Date().toISOString().split('T')[0];
-    
+
     await client.query('BEGIN');
-    
+
     await client.query(
       'INSERT INTO payments (bill_id, amount, method, date) VALUES ($1, $2, $3, $4)',
       [bill.id, actualPayment, method, todayStr]
     );
-    
+
     const newPaid = Number(bill.paid_amount) + actualPayment;
     const newDue = Number(bill.grand_total) - newPaid;
-    const newStatus = newDue <= 0.01 ? 'PAID' : 'PARTIAL'; 
-    
+    const newStatus = newDue <= 0.01 ? 'PAID' : 'PARTIAL';
+
     await client.query(
       'UPDATE bills SET paid_amount = $1, due_amount = $2, payment_status = $3 WHERE id = $4',
       [newPaid, newDue, newStatus, bill.id]
     );
-    
+
     await client.query('COMMIT');
     client.release();
-    
+
     res.json({ success: true, message: 'Payment recorded successfully' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -364,12 +412,12 @@ router.post('/customers', async (req, res) => {
     }
     const { name, phone, email, address } = req.body;
     if (!name) return res.status(400).json({ error: 'Customer name is required' });
-    
+
     const result = await db.query(
       'INSERT INTO customers (name, phone, email, address, retailer_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
       [name, phone || '', email || '', address || '', req.user.id]
     );
-    
+
     res.status(201).json({ id: result.rows[0].id, message: 'Customer added successfully' });
   } catch (err) {
     console.error('Error creating customer:', err);

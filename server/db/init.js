@@ -111,6 +111,9 @@ async function initializeDB() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Keep existing databases compatible with the GST-inclusive bill total.
+      ALTER TABLE bills ADD COLUMN IF NOT EXISTS grand_total DECIMAL(12,2) DEFAULT 0;
+
       CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
         name VARCHAR(150) NOT NULL,

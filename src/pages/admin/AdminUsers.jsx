@@ -2,10 +2,10 @@
 import { useState } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { Plus, Search, UserPlus, Building2, Users, Store, Shield, MoreVertical } from 'lucide-react'
+import { Plus, Search, UserPlus, Building2, Users, Store, Shield, Trash2 } from 'lucide-react'
 
 export default function AdminUsers() {
-  const { data, addUser } = useData()
+  const { data, addUser, deleteUser } = useData()
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('SS')
   const [search, setSearch] = useState('')
@@ -55,6 +55,23 @@ export default function AdminUsers() {
     return parent?.name || '-'
   }
 
+  const handleDeleteUser = async (u) => {
+    if (!u) return
+    if (u.id === user?.id) {
+      alert('You cannot delete your own account.')
+      return
+    }
+
+    const confirmed = window.confirm(`Delete user ${u.name} (${u.username})? This action cannot be undone.`)
+    if (!confirmed) return
+
+    try {
+      await deleteUser(u.id)
+    } catch (err) {
+      alert(err.message || 'Failed to delete user')
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -68,7 +85,7 @@ export default function AdminUsers() {
           Add User
         </button>
       </div>
-      
+
       {/* Tabs */}
       <div className="flex gap-2">
         {Object.entries(roleConfig).map(([role, config]) => {
@@ -78,11 +95,10 @@ export default function AdminUsers() {
             <button
               key={role}
               onClick={() => { setActiveTab(role); setNewUser(prev => ({ ...prev, role })) }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                activeTab === role
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === role
                   ? 'bg-brand-500/15 text-brand-400 border border-brand-500/50'
                   : 'bg-dark-card border border-dark-border text-dark-muted hover:text-white'
-              }`}
+                }`}
             >
               <Icon size={16} />
               {config.label}
@@ -91,7 +107,7 @@ export default function AdminUsers() {
           )
         })}
       </div>
-      
+
       {/* Search */}
       <div className="relative max-w-md">
         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted" />
@@ -103,7 +119,7 @@ export default function AdminUsers() {
           className="input-field pl-10"
         />
       </div>
-      
+
       {/* Users Table */}
       <div className="bg-dark-card border border-dark-border rounded-2xl overflow-hidden shadow-xl">
         <table className="w-full">
@@ -138,15 +154,18 @@ export default function AdminUsers() {
                   </td>
                   <td className="px-6 py-4 text-dark-muted">{getParentName(u.parentId || u.parent_id)}</td>
                   <td className="px-6 py-4">
-                    <span className={`status-pill ${
-                      uStatus === 'active' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'
-                    }`}>
+                    <span className={`status-pill ${uStatus === 'active' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                      }`}>
                       {uStatus}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button className="p-2 rounded-lg hover:bg-white/5 text-dark-muted hover:text-white transition-colors">
-                      <MoreVertical size={18} />
+                    <button
+                      onClick={() => handleDeleteUser(u)}
+                      className="p-2 rounded-lg hover:bg-red-500/10 text-dark-muted hover:text-red-400 transition-colors"
+                      title="Delete user"
+                    >
+                      <Trash2 size={18} />
                     </button>
                   </td>
                 </tr>
@@ -158,7 +177,7 @@ export default function AdminUsers() {
           <div className="text-center py-12 text-dark-muted text-sm">No users found</div>
         )}
       </div>
-      
+
       {/* Add User Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -169,7 +188,7 @@ export default function AdminUsers() {
               </div>
               <h3 className="text-lg font-bold text-white">Add New User</h3>
             </div>
-            
+
             {error && (
               <div className="p-3 mb-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
                 {error}
@@ -237,7 +256,7 @@ export default function AdminUsers() {
                 </select>
               </div>
             </div>
-            
+
             <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
               <button onClick={() => setShowModal(false)} className="flex-1 btn-secondary py-2.5 text-sm font-semibold">Cancel</button>
               <button onClick={handleAddUser} disabled={loading} className="flex-1 btn-primary py-2.5 text-sm font-bold disabled:opacity-50">

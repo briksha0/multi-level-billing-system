@@ -5,39 +5,66 @@
 @layer base {
   html {
     font-family: 'Sora', system-ui, sans-serif;
+    scroll-behavior: smooth;
   }
+
   body {
     @apply bg-dark-bg text-dark-text antialiased;
+    background-image: radial-gradient(circle at top left, rgba(31, 167, 109, 0.12), transparent 26%), linear-gradient(180deg, #f9f6f2 0%, #f5f1ea 100%);
+  }
+
+  * {
+    @apply border-dark-border;
+  }
+
+  .bg-white .text-white,
+  .bg-dark-card .text-white,
+  .bg-dark-bg .text-white {
+    color: #17392f !important;
+  }
+
+  .bg-white .text-dark-muted,
+  .bg-dark-card .text-dark-muted,
+  .bg-dark-bg .text-dark-muted {
+    color: #4d655f !important;
   }
 }
 
 @layer components {
   .metric-card {
-    @apply bg-dark-card border border-dark-border rounded-2xl p-5 transition-all duration-200 hover:translate-y-[-3px] hover:border-brand-500;
+    @apply bg-dark-card border border-dark-border rounded-2xl p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-soft;
   }
+
   .btn-primary {
-    @apply bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-lg font-medium transition-colors;
+    @apply bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl font-medium transition-colors shadow-sm;
   }
+
   .btn-secondary {
-    @apply bg-dark-card border border-dark-border hover:border-brand-500 text-dark-text px-4 py-2 rounded-lg font-medium transition-colors;
+    @apply bg-dark-card border border-dark-border hover:border-brand-500 text-dark-text px-4 py-2 rounded-xl font-medium transition-colors;
   }
+
   .input-field {
-    @apply bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-dark-text placeholder-dark-muted focus:outline-none focus:border-brand-500 w-full;
+    @apply bg-white border border-dark-border rounded-xl px-3 py-2.5 text-dark-text placeholder-dark-muted focus:outline-none focus:border-brand-500 w-full shadow-sm;
   }
+
   .table-header {
     @apply text-xs uppercase tracking-wide text-dark-muted font-medium border-b border-dark-border pb-3 text-left;
   }
+
   .table-row {
-    @apply border-b border-dark-border hover:bg-white/5 transition-colors;
+    @apply border-b border-dark-border hover:bg-brand-50 transition-colors;
   }
+
   .status-pill {
     @apply text-xs px-2.5 py-1 rounded-full font-medium;
   }
+
   .sidebar-link {
-    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-dark-muted hover:bg-white/5 hover:text-white transition-colors;
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-dark-muted hover:bg-brand-50 hover:text-dark-text transition-colors;
   }
+
   .sidebar-link.active {
-    @apply bg-brand-500/15 text-brand-400 border-l-2 border-brand-500;
+    @apply bg-brand-50 text-brand-700 border border-brand-200 shadow-sm;
   }
 }
 
@@ -46,13 +73,16 @@
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: #202024;
+  background: #ece5dc;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: #3a3a40;
+  background: #a9cdbd;
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: #4a4a50;
+  background: #77b490;
 }
