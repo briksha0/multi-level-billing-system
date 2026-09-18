@@ -1,0 +1,39 @@
+{
+  "name": "multi-level-billing-system",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Multi-Level Billing & Stock Management System with SQLite Backend - Admin → SS → Distributor → Retailer → Customer",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "client": "vite",
+    "server": "node server/index.js",
+    "server:watch": "nodemon server/index.js",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "NODE_ENV=production node server/index.js",
+    "db:reset": "rm -f data/mlb_system.db && node server/index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.1.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.424.0",
+    "mysql2": "^3.24.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.3",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.4",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.6",
+    "vite": "^8.3.0"
+  }
+}

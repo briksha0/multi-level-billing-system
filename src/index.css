@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Sora', system-ui, sans-serif;
+  }
+  body {
+    @apply bg-dark-bg text-dark-text antialiased;
+  }
+}
+
+@layer components {
+  .metric-card {
+    @apply bg-dark-card border border-dark-border rounded-2xl p-5 transition-all duration-200 hover:translate-y-[-3px] hover:border-brand-500;
+  }
+  .btn-primary {
+    @apply bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-lg font-medium transition-colors;
+  }
+  .btn-secondary {
+    @apply bg-dark-card border border-dark-border hover:border-brand-500 text-dark-text px-4 py-2 rounded-lg font-medium transition-colors;
+  }
+  .input-field {
+    @apply bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-dark-text placeholder-dark-muted focus:outline-none focus:border-brand-500 w-full;
+  }
+  .table-header {
+    @apply text-xs uppercase tracking-wide text-dark-muted font-medium border-b border-dark-border pb-3 text-left;
+  }
+  .table-row {
+    @apply border-b border-dark-border hover:bg-white/5 transition-colors;
+  }
+  .status-pill {
+    @apply text-xs px-2.5 py-1 rounded-full font-medium;
+  }
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-dark-muted hover:bg-white/5 hover:text-white transition-colors;
+  }
+  .sidebar-link.active {
+    @apply bg-brand-500/15 text-brand-400 border-l-2 border-brand-500;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #202024;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3a40;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a50;
+}
