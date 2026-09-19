@@ -1,3 +1,4 @@
+// server/routes/auth.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -15,11 +16,11 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Username and password are required' });
     }
     
-    // Updated to async MySQL query syntax
-    const [users] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
-    const user = users[0];
+    // PostgreSQL query syntax using $1 parameter
+    const result = await db.query('SELECT * FROM users WHERE username = $1', [username]);
+    const user = result.rows[0];
     
-    // Updated to async bcrypt.compare to prevent blocking the Node.js event loop
+    // Async bcrypt compare
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -60,9 +61,9 @@ router.post('/change-password', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Current and new passwords are required' });
     }
 
-    // Fetch the user's current password
-    const [users] = await db.query('SELECT password FROM users WHERE id = ?', [req.user.id]);
-    const user = users[0];
+    // Fetch the user's current password using PostgreSQL $1 parameter
+    const result = await db.query('SELECT password FROM users WHERE id = $1', [req.user.id]);
+    const user = result.rows[0];
     
     // Verify current password
     if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
@@ -71,7 +72,7 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     
     // Hash new password and update asynchronously
     const hashed = await bcrypt.hash(newPassword, 8);
-    await db.query('UPDATE users SET password = ? WHERE id = ?', [hashed, req.user.id]);
+    await db.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, req.user.id]);
     
     res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
@@ -81,30 +82,27 @@ router.post('/change-password', authenticateToken, async (req, res) => {
 });
 
 // Get children (downline users) for a specific user ID and role
-// Get downline child users for a specific user ID and role
 router.get('/:id/children', authenticateToken, async (req, res) => {
   try {
     const parentId = req.params.id;
     const { role } = req.query;
 
-    let query = 'SELECT id, username, name, role, parent_id, status, created_at FROM users WHERE parent_id = ?';
+    let query = 'SELECT id, username, name, role, parent_id, status, created_at FROM users WHERE parent_id = $1';
     const params = [parentId];
 
     if (role) {
-      query += ' AND role = ?';
+      query += ' AND role = $2';
       params.push(role);
     }
 
     query += ' ORDER BY name';
 
-    const [children] = await db.query(query, params);
-    res.json(children);
+    const result = await db.query(query, params);
+    res.json(result.rows);
   } catch (err) {
     console.error('Error fetching child users:', err);
     res.status(500).json({ error: 'Failed to fetch child users' });
   }
 });
-
-
 
 module.exports = router;

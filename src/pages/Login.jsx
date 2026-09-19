@@ -1,9 +1,10 @@
+// src/pages/Login.jsx
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { Building2, User, Lock, AlertCircle, ArrowRight } from 'lucide-react'
 
-// Demo accounts matching the exact seeds in our MySQL database
+// Demo accounts matching the exact seeds in our PostgreSQL database
 const DEMO_ACCOUNTS = [
   { id: 1, role: 'ADMIN', username: 'admin', password: 'admin123' },
   { id: 2, role: 'SS', username: 'ss_agra', password: 'ss123' },
@@ -17,37 +18,34 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   
-  // Removed DEMO_USERS from context since we use the real DB seeded ones above
   const { login, getRoleHomeRoute } = useAuth() 
   const navigate = useNavigate()
 
-  // Converted to async/await to handle the real API request
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     
     try {
-      // login() should now return a Promise from your updated AuthContext
       const result = await login(username, password)
       
-      if (result.success) {
-        // The real backend returns the user object on success
+      if (result && result.success) {
         navigate(getRoleHomeRoute(result.user.role))
       } else {
-        setError(result.error || 'Invalid credentials')
+        setError(result?.error || 'Invalid credentials')
       }
     } catch (err) {
-      setError('An error occurred connecting to the server')
+      setError(err.message || 'An error occurred connecting to the server')
       console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
-  const quickLogin = (user) => {
-    setUsername(user.username)
-    setPassword(user.password)
+  // Fixed quickLogin to correctly update both state fields
+  const quickLogin = (acc) => {
+    setUsername(acc.username)
+    setPassword(acc.password)
   }
 
   return (
@@ -129,7 +127,7 @@ export default function Login() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="input-field pl-10 bg-dark-bg text-white border-dark-border focus:border-brand-500 focus:ring-1 focus:ring-brand-500 w-full rounded-lg py-2 outline-none"
+                  className="input-field pl-10 bg-dark-bg text-white border-dark-border focus:border-brand-500 focus:ring-1 focus:ring-brand-500 w-full rounded-lg py-2.5 outline-none text-sm"
                   placeholder="Enter username"
                   required
                 />
@@ -144,7 +142,7 @@ export default function Login() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input-field pl-10 bg-dark-bg text-white border-dark-border focus:border-brand-500 focus:ring-1 focus:ring-brand-500 w-full rounded-lg py-2 outline-none"
+                  className="input-field pl-10 bg-dark-bg text-white border-dark-border focus:border-brand-500 focus:ring-1 focus:ring-brand-500 w-full rounded-lg py-2.5 outline-none text-sm"
                   placeholder="Enter password"
                   required
                 />
@@ -154,7 +152,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-brand-600 hover:bg-brand-500 text-white rounded-lg py-2.5 font-medium disabled:opacity-50 transition-colors"
+              className="w-full bg-brand-600 hover:bg-brand-500 text-white rounded-lg py-2.5 font-medium disabled:opacity-50 transition-colors shadow-lg shadow-brand-600/20"
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
@@ -166,11 +164,12 @@ export default function Login() {
               {DEMO_ACCOUNTS.map(u => (
                 <button
                   key={u.id}
+                  type="button"
                   onClick={() => quickLogin(u)}
-                  className="text-left p-2 rounded-lg bg-dark-bg border border-dark-border hover:border-brand-500 transition-colors text-xs"
+                  className="text-left p-2.5 rounded-lg bg-dark-bg border border-dark-border hover:border-brand-500 transition-colors text-xs group"
                 >
-                  <div className="font-medium text-white">{u.role}</div>
-                  <div className="text-dark-muted">{u.username}</div>
+                  <div className="font-semibold text-white group-hover:text-brand-400 transition-colors">{u.role}</div>
+                  <div className="text-dark-muted font-mono mt-0.5">{u.username}</div>
                 </button>
               ))}
             </div>

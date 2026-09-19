@@ -1,8 +1,9 @@
+// src/pages/admin/AdminProducts.jsx
 import { useState } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { api } from '../../api.js'
-import { Plus, Search, Package } from 'lucide-react'
+import { Plus, Search, Package, Edit3 } from 'lucide-react'
 
 export default function AdminProducts() {
   const { data, addProduct, updateProduct, refresh } = useData()
@@ -16,7 +17,10 @@ export default function AdminProducts() {
     initialStock: '' 
   })
 
-  const filteredProducts = data.products.filter(p => {
+  const productsList = Array.isArray(data?.products) ? data.products : []
+  const stockList = Array.isArray(data?.stock) ? data.stock : []
+
+  const filteredProducts = productsList.filter(p => {
     if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.sku.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
@@ -26,13 +30,13 @@ export default function AdminProducts() {
     
     const formattedData = {
       ...newProduct,
-      categoryId: 1, // Default fallback category since section is removed
+      categoryId: 1, // Default fallback category
       ssPrice: parseFloat(newProduct.ssPrice) || 0,
       distributorPrice: parseFloat(newProduct.distributorPrice) || 0,
       retailPrice: parseFloat(newProduct.retailPrice) || 0,
       mrp: parseFloat(newProduct.mrp) || 0,
-      minStock: parseInt(newProduct.minStock) || 10,
-      initialStock: parseInt(newProduct.initialStock) || 0,
+      minStock: parseInt(newProduct.minStock, 10) || 10,
+      initialStock: parseInt(newProduct.initialStock, 10) || 0,
     };
 
     try {
@@ -45,7 +49,7 @@ export default function AdminProducts() {
         await addProduct(formattedData);
       }
 
-      if (refresh) await refresh(); // Refresh global data state
+      if (refresh) await refresh();
 
       setNewProduct({
         id: null, name: '', sku: '', unit: 'PCS', itemsPerUnit: '',
@@ -57,12 +61,32 @@ export default function AdminProducts() {
     }
   }
 
+  const handleEditClick = (p) => {
+    const stockItem = stockList.find(s => (s.product_id || s.productId) === p.id);
+    const stockQty = stockItem ? stockItem.quantity : 0;
+
+    setNewProduct({
+      id: p.id,
+      name: p.name || '',
+      sku: p.sku || '',
+      unit: p.unit || 'PCS',
+      itemsPerUnit: p.items_per_unit || '',
+      ssPrice: p.ss_price ?? '',
+      distributorPrice: p.distributor_price ?? '',
+      retailPrice: p.retail_price ?? '',
+      mrp: p.mrp ?? '',
+      minStock: p.min_stock ?? 10,
+      initialStock: stockQty
+    });
+    setShowModal(true);
+  }
+
   const handleProductNameChange = (e) => {
     const selectedName = e.target.value;
-    const match = data.products.find(p => p.name === selectedName);
+    const match = productsList.find(p => p.name === selectedName);
 
     if (match) {
-      const stockItem = data.stock?.find(s => (s.product_id || s.productId) === match.id);
+      const stockItem = stockList.find(s => (s.product_id || s.productId) === match.id);
       const currentStockQty = stockItem ? stockItem.quantity : 0;
 
       setNewProduct(prev => ({
@@ -71,10 +95,11 @@ export default function AdminProducts() {
         name: selectedName,
         sku: match.sku || '',
         itemsPerUnit: match.items_per_unit || '',
-        ssPrice: match.ss_price || '',
-        distributorPrice: match.distributor_price || '',
-        retailPrice: match.retail_price || '',
-        mrp: match.mrp || '',
+        ssPrice: match.ss_price ?? '',
+        distributorPrice: match.distributor_price ?? '',
+        retailPrice: match.retail_price ?? '',
+        mrp: match.mrp ?? '',
+        minStock: match.min_stock ?? 10,
         initialStock: currentStockQty
       }));
     } else {
@@ -97,7 +122,7 @@ export default function AdminProducts() {
           setShowModal(true);
         }} className="btn-primary flex items-center gap-2">
           <Plus size={18} />
-          Add / Edit Product
+          Add Product
         </button>
       </div>
       
@@ -114,13 +139,13 @@ export default function AdminProducts() {
       </div>
       
       {/* Products Table */}
-      <div className="bg-dark-card border border-dark-border rounded-2xl overflow-hidden">
+      <div className="bg-dark-card border border-dark-border rounded-2xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px]">
             <thead>
               <tr className="bg-dark-bg/50">
                 <th className="table-header px-4 py-4">Product</th>
-                {/* <th className="table-header px-4 py-4">SKU</th> */}
+                <th className="table-header px-4 py-4">SKU</th>
                 <th className="table-header px-4 py-4">Unit</th>
                 <th className="table-header px-4 py-4">Pack Size</th>
                 <th className="table-header px-4 py-4 text-right">SS Price</th>
@@ -128,16 +153,16 @@ export default function AdminProducts() {
                 <th className="table-header px-4 py-4 text-right">Retail</th>
                 <th className="table-header px-4 py-4 text-right">MRP</th>
                 <th className="table-header px-4 py-4 text-center">Available Stock</th>
-                {/* <th className="table-header px-4 py-4 text-center">Status</th> */}
+                <th className="table-header px-4 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredProducts.map(p => {
-                const stockItem = data.stock?.find(s => (s.product_id || s.productId) === p.id)
+                const stockItem = stockList.find(s => (s.product_id || s.productId) === p.id)
                 const stockQty = stockItem ? stockItem.quantity : 0
 
                 return (
-                  <tr key={p.id} className="table-row">
+                  <tr key={p.id} className="table-row hover:bg-white/[0.02]">
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-brand-500/15 flex items-center justify-center text-brand-500">
@@ -146,7 +171,7 @@ export default function AdminProducts() {
                         <div className="font-medium text-white">{p.name}</div>
                       </div>
                     </td>
-                    {/* <td className="px-4 py-4 font-mono text-sm text-dark-muted">{p.sku}</td> */}
+                    <td className="px-4 py-4 font-mono text-sm text-dark-muted">{p.sku}</td>
                     <td className="px-4 py-4 text-dark-muted">{p.unit}</td>
                     <td className="px-4 py-4 text-dark-muted text-sm">{p.items_per_unit || '-'}</td>
                     
@@ -161,44 +186,55 @@ export default function AdminProducts() {
                       </div>
                     </td>
 
-                    
+                    <td className="px-4 py-4 text-right">
+                      <button 
+                        onClick={() => handleEditClick(p)}
+                        className="p-2 rounded-lg hover:bg-white/10 text-dark-muted hover:text-white transition-colors"
+                        title="Edit Product"
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
+          {filteredProducts.length === 0 && (
+            <div className="text-center py-12 text-dark-muted text-sm">No products found</div>
+          )}
         </div>
       </div>
       
-      {/* Add / Edit Product Modal (Category section removed) */}
+      {/* Add / Edit Product Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-dark-card border border-dark-border rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-white mb-6">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-card border border-dark-border rounded-3xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-6">
               {newProduct.id ? 'Edit Existing Product' : 'Add New Product'}
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <label className="block text-sm text-dark-muted mb-2">Product Name *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Product Name *</label>
                 <input 
                   type="text" 
                   list="product-suggestions"
                   value={newProduct.name} 
                   onChange={handleProductNameChange} 
-                  className="input-field" 
+                  className="input-field text-sm" 
                   placeholder="Search or type product name" 
                 />
                 <datalist id="product-suggestions">
-                  {data.products.map((p) => (
+                  {productsList.map((p) => (
                     <option key={p.id} value={p.name} />
                   ))}
                 </datalist>
               </div>
               
               <div>
-                <label className="block text-sm text-dark-muted mb-2">Primary Unit</label>
-                <select value={newProduct.unit} onChange={(e) => setNewProduct(p => ({ ...p, unit: e.target.value }))} className="input-field">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Primary Unit</label>
+                <select value={newProduct.unit} onChange={(e) => setNewProduct(p => ({ ...p, unit: e.target.value }))} className="input-field text-sm font-medium">
                   <option value="PCS">PCS</option>
                   <option value="BOX">BOX</option>
                   <option value="PACK">PACK</option>
@@ -208,62 +244,68 @@ export default function AdminProducts() {
               </div>
 
               <div>
-                <label className="block text-sm text-dark-muted mb-2">Pack Size (Optional)</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Pack Size (Optional)</label>
                 <input 
                   type="text" 
                   value={newProduct.itemsPerUnit} 
                   onChange={(e) => setNewProduct(p => ({ ...p, itemsPerUnit: e.target.value }))} 
-                  className="input-field" 
+                  className="input-field text-sm" 
                   placeholder="e.g. 12 PCS" 
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-dark-muted mb-2">SKU *</label>
-                <input type="text" value={newProduct.sku} disabled={!!newProduct.id} onChange={(e) => setNewProduct(p => ({ ...p, sku: e.target.value }))} className="input-field disabled:opacity-50" placeholder="Auto-fills on selection" />
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">SKU *</label>
+                <input 
+                  type="text" 
+                  value={newProduct.sku} 
+                  onChange={(e) => setNewProduct(p => ({ ...p, sku: e.target.value }))} 
+                  className="input-field text-sm font-mono" 
+                  placeholder="e.g., LD-750" 
+                />
               </div>
 
               {/* Pricing Tiers Section */}
               <div className="md:col-span-2 mt-2 pt-4 border-t border-dark-border">
-                <h4 className="text-sm font-medium text-white mb-4">Pricing Tiers</h4>
+                <h4 className="text-sm font-bold text-white mb-4">Pricing Tiers</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
-                    <label className="block text-xs text-dark-muted mb-2">SS Price (₹)</label>
-                    <input type="number" value={newProduct.ssPrice} onChange={(e) => setNewProduct(p => ({ ...p, ssPrice: e.target.value }))} className="input-field" />
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">SS Price (₹)</label>
+                    <input type="number" step="0.01" value={newProduct.ssPrice} onChange={(e) => setNewProduct(p => ({ ...p, ssPrice: e.target.value }))} className="input-field text-sm" />
                   </div>
                   <div>
-                    <label className="block text-xs text-dark-muted mb-2">Distributor (₹)</label>
-                    <input type="number" value={newProduct.distributorPrice} onChange={(e) => setNewProduct(p => ({ ...p, distributorPrice: e.target.value }))} className="input-field" />
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Distributor (₹)</label>
+                    <input type="number" step="0.01" value={newProduct.distributorPrice} onChange={(e) => setNewProduct(p => ({ ...p, distributorPrice: e.target.value }))} className="input-field text-sm" />
                   </div>
                   <div>
-                    <label className="block text-xs text-dark-muted mb-2">Retailer (₹)</label>
-                    <input type="number" value={newProduct.retailPrice} onChange={(e) => setNewProduct(p => ({ ...p, retailPrice: e.target.value }))} className="input-field" />
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Retailer (₹)</label>
+                    <input type="number" step="0.01" value={newProduct.retailPrice} onChange={(e) => setNewProduct(p => ({ ...p, retailPrice: e.target.value }))} className="input-field text-sm" />
                   </div>
                   <div>
-                    <label className="block text-xs text-dark-muted mb-2">MRP (₹)</label>
-                    <input type="number" value={newProduct.mrp} onChange={(e) => setNewProduct(p => ({ ...p, mrp: e.target.value }))} className="input-field" />
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">MRP (₹)</label>
+                    <input type="number" step="0.01" value={newProduct.mrp} onChange={(e) => setNewProduct(p => ({ ...p, mrp: e.target.value }))} className="input-field text-sm" />
                   </div>
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4 md:col-span-2">
+              <div className="grid grid-cols-2 gap-4 md:col-span-2 pt-2">
                 <div>
-                  <label className="block text-sm text-dark-muted mb-2">Min Stock Alert</label>
-                  <input type="number" value={newProduct.minStock} onChange={(e) => setNewProduct(p => ({ ...p, minStock: e.target.value }))} className="input-field" />
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Min Stock Alert</label>
+                  <input type="number" value={newProduct.minStock} onChange={(e) => setNewProduct(p => ({ ...p, minStock: e.target.value }))} className="input-field text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm text-dark-muted mb-2">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">
                     {newProduct.id ? 'Update Stock Quantity' : 'Initial Stock'}
                   </label>
-                  <input type="number" value={newProduct.initialStock} onChange={(e) => setNewProduct(p => ({ ...p, initialStock: e.target.value }))} className="input-field" placeholder="0" />
+                  <input type="number" value={newProduct.initialStock} onChange={(e) => setNewProduct(p => ({ ...p, initialStock: e.target.value }))} className="input-field text-sm" placeholder="0" />
                 </div>
               </div>
 
             </div>
             
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowModal(false)} className="flex-1 btn-secondary">Cancel</button>
-              <button onClick={handleAddProduct} className="flex-1 btn-primary">
+            <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
+              <button onClick={() => setShowModal(false)} className="flex-1 btn-secondary py-2.5 text-sm font-semibold">Cancel</button>
+              <button onClick={handleAddProduct} className="flex-1 btn-primary py-2.5 text-sm font-bold">
                 {newProduct.id ? 'Save Changes' : 'Create Product'}
               </button>
             </div>

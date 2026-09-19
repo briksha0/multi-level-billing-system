@@ -1,38 +1,39 @@
+// server/db/migrate_products.js
 require('dotenv').config();
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 
 async function run() {
-  const pool = mysql.createPool({
+  const pool = new Pool({
     host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'admin',
-    database: process.env.DB_NAME || 'mlb_system'
+    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5432,
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'supply_chain_db'
   });
 
   try {
-    console.log('🔄 1. Upgrading products table schema...');
+    console.log('🔄 1. Ensuring products table has pricing columns schema...');
     
-    // Add the new pricing columns. We use a try-catch for each in case they already exist.
+    // Add new pricing columns if they don't already exist
     const columns = [
-      'ALTER TABLE products ADD COLUMN ss_price DECIMAL(10,2) DEFAULT 0',
-      'ALTER TABLE products ADD COLUMN distributor_price DECIMAL(10,2) DEFAULT 0',
-      'ALTER TABLE products ADD COLUMN retail_price DECIMAL(10,2) DEFAULT 0',
-      'ALTER TABLE products ADD COLUMN mrp DECIMAL(10,2) DEFAULT 0'
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS ss_price DECIMAL(10,2) DEFAULT 0',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS distributor_price DECIMAL(10,2) DEFAULT 0',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS retail_price DECIMAL(10,2) DEFAULT 0',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS mrp DECIMAL(10,2) DEFAULT 0',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS purchase_price DECIMAL(10,2) DEFAULT 0',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DECIMAL(10,2) DEFAULT 0',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS gst DECIMAL(5,2) DEFAULT 0',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS hsn VARCHAR(50) DEFAULT NULL'
     ];
 
     for (const query of columns) {
-      try {
-        await pool.query(query);
-      } catch (err) {
-        if (err.code !== 'ER_DUP_FIELDNAME') throw err; // Ignore if column already exists
-      }
+      await pool.query(query);
     }
-    console.log('✅ Schema updated successfully with 4 pricing tiers.');
+    console.log('✅ Schema verified and updated successfully.');
 
-    console.log('🔄 2. Inserting 26 products from image data...');
+    console.log('🔄 2. Inserting/updating 26 products from data...');
 
-    // Exact data mapped from edited-image.png
-    // Array map: [name, category_id, sku, barcode, unit, ss, dist, retail, mrp, purchase_price (fallback), sale_price (fallback), gst, hsn, min_stock]
+    // Array map: [name, category_id, sku, barcode, unit, ss, dist, retail, mrp, purchase_price, sale_price, gst, hsn, min_stock]
     const newProducts = [
       ['Liquid Detergent 500ml+250ml', 2, 'LD-750', '890101', 'PCS', 116.95, 126.31, 138.00, 209, 116.95, 209, 18, '3402', 50],
       ['Liquid Detergent 1L', 2, 'LD-1L', '890102', 'PCS', 161.02, 173.90, 190.00, 269, 161.02, 269, 18, '3402', 50],
@@ -65,33 +66,56 @@ async function run() {
     const insertQuery = `
       INSERT INTO products 
       (name, category_id, sku, barcode, unit, ss_price, distributor_price, retail_price, mrp, purchase_price, sale_price, gst, hsn, min_stock) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE 
-      ss_price = VALUES(ss_price), distributor_price = VALUES(distributor_price), 
-      retail_price = VALUES(retail_price), mrp = VALUES(mrp)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT (sku) DO UPDATE SET 
+        ss_price = EXCLUDED.ss_price, 
+        distributor_price = EXCLUDED.distributor_price, 
+        retail_price = EXCLUDED.retail_price, 
+        mrp = EXCLUDED.mrp,
+        purchase_price = EXCLUDED.purchase_price,
+        sale_price = EXCLUDED.sale_price,
+        gst = EXCLUDED.gst,
+        hsn = EXCLUDED.hsn
+      RETURNING id, (xmax = 0) AS inserted;
     `;
 
     for (const p of newProducts) {
-      const [result] = await pool.query(insertQuery, p);
-      
-      // If it's a completely new insert (not an update), initialize stock to 0 for everyone
-      if (result.insertId) {
-         const [users] = await pool.query('SELECT id FROM users');
-         if (users.length > 0) {
-           const stockValues = users.map(u => [u.id, result.insertId, 0]);
-           await pool.query('INSERT IGNORE INTO stock (user_id, product_id, quantity) VALUES ?', [stockValues]);
-         }
-         console.log(`  Added: ${p[0]}`);
+      const res = await pool.query(insertQuery, p);
+      const row = res.rows[0];
+      const productId = row.id;
+      const isInserted = row.inserted;
+
+      if (isInserted) {
+        // Initialize stock to 0 for all existing users for newly added products
+        const usersResult = await pool.query('SELECT id FROM users');
+        const users = usersResult.rows;
+        if (users.length > 0) {
+          let valuesClause = [];
+          let queryParams = [];
+          let index = 1;
+
+          users.forEach(u => {
+            valuesClause.push(`($${index++}, $${index++}, $${index++})`);
+            queryParams.push(u.id, productId, 0);
+          });
+
+          await pool.query(
+            `INSERT INTO stock (user_id, product_id, quantity) VALUES ${valuesClause.join(', ')} ON CONFLICT (user_id, product_id) DO NOTHING`,
+            queryParams
+          );
+        }
+        console.log(`  Added: ${p[0]}`);
       } else {
-         console.log(`  Updated existing: ${p[0]}`);
+        console.log(`  Updated existing: ${p[0]}`);
       }
     }
     
-    console.log('🎉 All 26 products inserted/updated successfully!');
+    console.log('🎉 All 26 products inserted/updated successfully in PostgreSQL!');
 
   } catch (error) {
     console.error('❌ Error during update:', error);
   } finally {
+    await pool.end();
     process.exit(0);
   }
 }

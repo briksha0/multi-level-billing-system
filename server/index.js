@@ -1,12 +1,12 @@
 // 1. Load environment variables first
 require('dotenv').config();
 
-// 2. Import packages (only declare these once!)
+// 2. Import packages
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
-// 3. Initialize database
+// 3. Initialize PostgreSQL database connection pool & tables
 require('./db/init');
 
 // 4. Initialize Express app BEFORE using app.use()
@@ -33,7 +33,7 @@ app.use('/api/reports', require('./routes/reports'));
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', database: 'postgresql', timestamp: new Date().toISOString() });
 });
 
 // Serve frontend in production
@@ -56,10 +56,10 @@ app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   🚀 MLB System Backend Server                               ║
+║   🚀 Supply Chain System Backend (PostgreSQL)                ║
 ║                                                              ║
-║   API:    http://localhost:${PORT}/api                         ║
-║   Health: http://localhost:${PORT}/api/health                  ║
+║   API:    http://localhost:${PORT}/api                       ║
+║   Health: http://localhost:${PORT}/api/health                ║
 ║                                                              ║
 ║   Frontend: npm run dev (http://localhost:5173)              ║
 ║                                                              ║

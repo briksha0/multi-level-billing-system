@@ -1,3 +1,4 @@
+// src/api.js
 // API helper module - handles all backend communication
 const API_BASE = '/api';
 
@@ -17,22 +18,35 @@ async function request(endpoint, options = {}) {
     ...options.headers,
   };
   
+  
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   
+ try {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers,
   });
-  
-  const data = await response.json().catch(() => ({}));
-  
+
+  // Try to parse JSON
+  const data = await response.json();
+
+  // Handle HTTP errors
   if (!response.ok) {
-    throw new Error(data.error || `HTTP ${response.status}`);
+    throw new Error(
+      data?.error ||
+      data?.message ||
+      `Request failed with status ${response.status}`
+    );
   }
-  
+
   return data;
+
+} catch (error) {
+  console.error(`API request failed: ${endpoint}`, error);
+  throw error;
+}
 }
 
 export const api = {
@@ -76,7 +90,7 @@ export const api = {
   // Billing
   getBills: (type = 'sales') => request(`/bills?type=${type}`),
   getBill: (id) => request(`/bills/${id}`),
-  createBill: (billData) => request('/bills', { method: 'POST', body: JSON.stringify(billData) }),
+  createBill: (billData, items) => request('/bills', { method: 'POST', body: JSON.stringify({ ...billData, items }) }),
   addPayment: (billId, amount, method) => request(`/bills/${billId}/payments`, { method: 'POST', body: JSON.stringify({ amount, method }) }),
   
   // Customers
@@ -96,4 +110,5 @@ export const api = {
   setToken,
   getToken,
   clearToken: () => setToken(null),
+  
 };

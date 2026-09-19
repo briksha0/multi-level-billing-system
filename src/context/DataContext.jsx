@@ -1,3 +1,4 @@
+// src/context/DataContext.jsx
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useAuth } from './AuthContext.jsx'
 import { api } from '../api.js'
@@ -12,7 +13,7 @@ export function DataProvider({ children }) {
     products: [],
     bills: [],
     customers: [],
-    stock: [], // <-- Added stock to state
+    stock: [],
   })
   const [loading, setLoading] = useState(false)
 
@@ -21,11 +22,11 @@ export function DataProvider({ children }) {
     if (user) {
       loadInitialData()
     } else {
-      setData({ users: [], categories: [], products: [], bills: [], customers: [] })
+      setData({ users: [], categories: [], products: [], bills: [], customers: [], stock: [] })
     }
   }, [user])
 
- const loadInitialData = async () => {
+  const loadInitialData = async () => {
     setLoading(true)
     try {
       const [users, categories, products, bills, stock] = await Promise.all([
@@ -33,29 +34,29 @@ export function DataProvider({ children }) {
         api.getCategories().catch(() => []),
         api.getProducts().catch(() => []),
         api.getBills('sales').catch(() => []),
-        api.getStock().catch(() => []), // <-- Fetch stock here
+        api.getStock().catch(() => []),
       ])
-      setData(prev => ({ ...prev, users, categories, products, bills, stock })) // <-- Add stock to state
+      setData(prev => ({ ...prev, users, categories, products, bills, stock }))
     } catch (err) {
       console.error('Failed to load initial data:', err)
     }
     setLoading(false)
   }
 
- // Helper: get user by ID (safely handles undefined/null)
+  // Helper: get user by ID (safely handles undefined/null)
   const getUserById = useCallback((id) => {
     if (!id) return null;
-    return data.users.find(u => u.id === id) || api.getUser(id).catch(() => null)
+    return data.users.find(u => Number(u.id) === Number(id)) || api.getUser(id).catch(() => null)
   }, [data.users])
 
   // Helper: get product by ID
   const getProductById = useCallback((id) => {
-    return data.products.find(p => p.id === id)
+    return data.products.find(p => Number(p.id) === Number(id))
   }, [data.products])
 
   // Helper: get category by ID
   const getCategoryById = useCallback((id) => {
-    return data.categories.find(c => c.id === id)
+    return data.categories.find(c => Number(c.id) === Number(id))
   }, [data.categories])
 
   // Get children of a user
@@ -64,7 +65,7 @@ export function DataProvider({ children }) {
       return await api.getUserChildren(userId, roleFilter)
     } catch {
       return data.users.filter(u => {
-        if (u.parentId !== userId) return false
+        if (Number(u.parentId || u.parent_id) !== Number(userId)) return false
         if (roleFilter && u.role !== roleFilter) return false
         return true
       })
@@ -75,7 +76,7 @@ export function DataProvider({ children }) {
   const getAllDescendants = useCallback((userId) => {
     const result = []
     const findChildren = (parentId) => {
-      const children = data.users.filter(u => u.parentId === parentId)
+      const children = data.users.filter(u => Number(u.parentId || u.parent_id) === Number(parentId))
       children.forEach(c => {
         result.push(c)
         findChildren(c.id)
@@ -90,7 +91,11 @@ export function DataProvider({ children }) {
     try {
       const stock = await api.getStock(userId)
       const stockObj = {}
-      stock.forEach(s => { stockObj[s.product_id] = s.quantity })
+      if (Array.isArray(stock)) {
+        stock.forEach(s => { 
+          stockObj[Number(s.product_id || s.productId)] = Number(s.quantity) || 0 
+        })
+      }
       return stockObj
     } catch {
       return {}
@@ -101,7 +106,12 @@ export function DataProvider({ children }) {
   const getTotalStockValue = useCallback(async (userId) => {
     try {
       const stock = await api.getStock(userId)
-      return stock.reduce((sum, s) => sum + (s.quantity * s.purchase_price), 0)
+      if (!Array.isArray(stock)) return 0
+      return stock.reduce((sum, s) => {
+        const qty = Number(s.quantity) || 0
+        const price = Number(s.ss_price || s.purchase_price || 0)
+        return sum + (qty * price)
+      }, 0)
     } catch {
       return 0
     }
@@ -157,21 +167,22 @@ export function DataProvider({ children }) {
   // Create bill
   const createBill = useCallback(async (billData, items) => {
     try {
-      const result = await api.createBill({ ...billData, items })
-      // Refresh bills list
-      const bills = await api.getBills('sales')
-      setData(prev => ({ ...prev, bills }))
+      const result = await api.createBill(billData, items)
+      const [bills, stock] = await Promise.all([
+        api.getBills('sales').catch(() => data.bills),
+        api.getStock().catch(() => data.stock)
+      ])
+      setData(prev => ({ ...prev, bills, stock }))
       return result
     } catch (err) {
       throw err
     }
-  }, [])
+  }, [data.bills, data.stock])
 
   // Add user
   const addUser = useCallback(async (userData) => {
     try {
       const result = await api.createUser(userData)
-      // Refresh users
       const users = await api.getUsers()
       setData(prev => ({ ...prev, users }))
       return result
@@ -192,27 +203,30 @@ export function DataProvider({ children }) {
     }
   }, [])
 
-  // FIX: Make updateProduct match addProduct's clean structure!
+  // Update product
   const updateProduct = useCallback(async (id, productData) => {
     try {
-      const result = await api.updateProduct(id, productData);
-      const products = await api.getProducts(); // Fetch fresh list from DB
-      setData(prev => ({ ...prev, products })); // Update React state immediately
-      return result;
+      const result = await api.updateProduct(id, productData)
+      const products = await api.getProducts()
+      setData(prev => ({ ...prev, products }))
+      return result
     } catch (err) {
-      console.error('Failed to update product:', err);
-      throw err;
+      console.error('Failed to update product:', err)
+      throw err
     }
-  }, []);
+  }, [])
 
   // Add opening stock
   const addOpeningStock = useCallback(async (userId, productId, quantity) => {
     try {
-      return await api.addStock(userId, productId, quantity)
+      const result = await api.addStock(userId, productId, quantity)
+      const stock = await api.getStock(userId).catch(() => data.stock)
+      setData(prev => ({ ...prev, stock }))
+      return result
     } catch (err) {
       throw err
     }
-  }, [])
+  }, [data.stock])
 
   // Get bill items
   const getBillItems = useCallback(async (billId) => {
@@ -227,7 +241,7 @@ export function DataProvider({ children }) {
   // Get visible users based on role
   const getVisibleUsers = useCallback((currentUser) => {
     if (!currentUser) return []
-    if (currentUser.role === 'ADMIN') return data.users.filter(u => u.id !== currentUser.id)
+    if (currentUser.role === 'ADMIN') return data.users.filter(u => Number(u.id) !== Number(currentUser.id))
     return getAllDescendants(currentUser.id)
   }, [data.users, getAllDescendants])
 

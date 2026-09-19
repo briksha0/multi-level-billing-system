@@ -1,3 +1,4 @@
+// server/routes/users.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db/init');
@@ -21,23 +22,24 @@ router.get('/', async (req, res) => {
 
     if (req.user.role === 'ADMIN') {
       if (role) {
-        const [rows] = await db.query(`${baseQuery} WHERE u.role = ? AND u.id != ?`, [role, req.user.id]);
-        users = rows;
+        const result = await db.query(`${baseQuery} WHERE u.role = $1 AND u.id != $2`, [role, req.user.id]);
+        users = result.rows;
       } else {
-        const [rows] = await db.query(`${baseQuery} WHERE u.id != ?`, [req.user.id]);
-        users = rows;
+        const result = await db.query(`${baseQuery} WHERE u.id != $1`, [req.user.id]);
+        users = result.rows;
       }
     } else {
-      // Fetch all users once and build the hierarchy in memory (much faster than recursive DB queries)
-      const [allUsers] = await db.query(baseQuery);
+      // Fetch all users once and build the hierarchy in memory
+      const result = await db.query(baseQuery);
+      const allUsers = result.rows;
       
       const getDescendants = (parentId, all) => {
         const children = all.filter(u => u.parent_id === parentId);
-        let result = [...children];
+        let resList = [...children];
         children.forEach(c => { 
-          result = result.concat(getDescendants(c.id, all)); 
+          resList = resList.concat(getDescendants(c.id, all)); 
         });
-        return result;
+        return resList;
       };
       
       users = getDescendants(req.user.id, allUsers);
@@ -57,13 +59,13 @@ router.get('/', async (req, res) => {
 // Get user by ID
 router.get('/:userId', canAccessUser, async (req, res) => {
   try {
-    const [users] = await db.query(
-      'SELECT id, username, name, role, parent_id, status, created_at FROM users WHERE id = ?',
+    const result = await db.query(
+      'SELECT id, username, name, role, parent_id, status, created_at FROM users WHERE id = $1',
       [req.params.userId]
     );
     
-    if (users.length === 0) return res.status(404).json({ error: 'User not found' });
-    res.json(users[0]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
   } catch (err) {
     console.error('Error fetching user:', err);
     res.status(500).json({ error: 'Failed to fetch user' });
@@ -73,7 +75,7 @@ router.get('/:userId', canAccessUser, async (req, res) => {
 // Create user (Admin or SS or Distributor)
 router.post('/', requireRole('ADMIN', 'SS', 'DISTRIBUTOR'), async (req, res) => {
   try {
-    const { username, name, role, parentId } = req.body;
+    const { username, name, role, parentId, password } = req.body;
     
     if (!username || !name || !role) {
       return res.status(400).json({ error: 'Username, name, and role are required' });
@@ -91,8 +93,8 @@ router.post('/', requireRole('ADMIN', 'SS', 'DISTRIBUTOR'), async (req, res) => 
     if (req.user.role === 'SS' && role === 'RETAILER') {
       if (!parentId) return res.status(400).json({ error: 'Parent distributor is required' });
       
-      const [parents] = await db.query('SELECT id, parent_id FROM users WHERE id = ? AND role = ?', [parentId, 'DISTRIBUTOR']);
-      const parent = parents[0];
+      const parentResult = await db.query('SELECT id, parent_id FROM users WHERE id = $1 AND role = $2', [parentId, 'DISTRIBUTOR']);
+      const parent = parentResult.rows[0];
       
       if (!parent || parent.parent_id !== req.user.id) {
         return res.status(403).json({ error: 'Invalid parent distributor' });
@@ -101,32 +103,44 @@ router.post('/', requireRole('ADMIN', 'SS', 'DISTRIBUTOR'), async (req, res) => 
     if (req.user.role === 'DISTRIBUTOR') validParentId = req.user.id;
     
     // Check existing username
-    const [existing] = await db.query('SELECT id FROM users WHERE username = ?', [username.toLowerCase()]);
-    if (existing.length > 0) return res.status(400).json({ error: 'Username already exists' });
+    const existingResult = await db.query('SELECT id FROM users WHERE username = $1', [username.toLowerCase()]);
+    if (existingResult.rows.length > 0) return res.status(400).json({ error: 'Username already exists' });
     
-    const defaultPassword = role === 'SS' ? 'ss123' : role === 'DISTRIBUTOR' ? 'dist123' : 'retail123';
-    const hashed = await bcrypt.hash(defaultPassword, 8); // Async hash
+    const userPassword = password || (role === 'SS' ? 'ss123' : role === 'DISTRIBUTOR' ? 'dist123' : 'retail123');
+    const hashed = await bcrypt.hash(userPassword, 8);
     
-    // Insert new user
-    const [result] = await db.query(
-      'INSERT INTO users (username, password, name, role, parent_id) VALUES (?, ?, ?, ?, ?)',
+    // Insert new user with PostgreSQL RETURNING id
+    const insertResult = await db.query(
+      'INSERT INTO users (username, password, name, role, parent_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
       [username.toLowerCase(), hashed, name, role, validParentId]
     );
     
-    const newUserId = result.insertId; // MySQL uses insertId instead of lastInsertRowid
+    const newUserId = insertResult.rows[0].id;
     
-    // Initialize empty stock for new user
-    const [products] = await db.query('SELECT id FROM products');
+    // Initialize empty stock for new user across all products
+    const productsResult = await db.query('SELECT id FROM products');
+    const products = productsResult.rows;
+    
     if (products.length > 0) {
-      // Bulk insert is much more efficient than looping through individual inserts
-      const stockValues = products.map(p => [newUserId, p.id, 0]);
-      await db.query('INSERT INTO stock (user_id, product_id, quantity) VALUES ?', [stockValues]);
+      // Build a bulk insert query for PostgreSQL ($1, $2, $3), ($4, $5, $6)...
+      let valuesClause = [];
+      let queryParams = [];
+      let index = 1;
+
+      products.forEach(p => {
+        valuesClause.push(`($${index++}, $${index++}, $${index++})`);
+        queryParams.push(newUserId, p.id, 0);
+      });
+
+      await db.query(
+        `INSERT INTO stock (user_id, product_id, quantity) VALUES ${valuesClause.join(', ')}`,
+        queryParams
+      );
     }
     
     res.status(201).json({ 
       id: newUserId, 
-      message: 'User created successfully',
-      defaultPassword
+      message: 'User created successfully'
     });
   } catch (err) {
     console.error('Error creating user:', err);
@@ -142,7 +156,7 @@ router.patch('/:userId/status', canAccessUser, async (req, res) => {
       return res.status(400).json({ error: 'Invalid status' });
     }
     
-    await db.query('UPDATE users SET status = ? WHERE id = ?', [status, req.params.userId]);
+    await db.query('UPDATE users SET status = $1 WHERE id = $2', [status, req.params.userId]);
     res.json({ success: true, message: `User status updated to ${status}` });
   } catch (err) {
     console.error('Error updating user status:', err);
@@ -154,16 +168,16 @@ router.patch('/:userId/status', canAccessUser, async (req, res) => {
 router.get('/:userId/children', canAccessUser, async (req, res) => {
   try {
     const { role } = req.query;
-    let query = 'SELECT id, username, name, role, parent_id, status FROM users WHERE parent_id = ?';
+    let query = 'SELECT id, username, name, role, parent_id, status FROM users WHERE parent_id = $1';
     const params = [req.params.userId];
     
     if (role) { 
-      query += ' AND role = ?'; 
+      query += ' AND role = $2'; 
       params.push(role); 
     }
     
-    const [children] = await db.query(query, params);
-    res.json(children);
+    const result = await db.query(query, params);
+    res.json(result.rows);
   } catch (err) {
     console.error("Error fetching user's children:", err);
     res.status(500).json({ error: "Failed to fetch user's children" });

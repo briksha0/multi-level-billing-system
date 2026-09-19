@@ -1,225 +1,501 @@
+// server/routes/stock.js
 const express = require('express');
 const db = require('../db/init');
-const { authenticateToken, canAccessUser } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticateToken);
 
+// =====================================================
 // Get stock for a user (defaults to current user)
+// =====================================================
 router.get('/', async (req, res) => {
   try {
-    const userId = req.query.userId ? parseInt(req.query.userId, 10) : req.user.id;
-    
+    const userId = req.query.userId
+      ? parseInt(req.query.userId, 10)
+      : req.user.id;
+
+    if (!Number.isInteger(userId)) {
+      return res.status(400).json({
+        error: 'Invalid userId'
+      });
+    }
+
     // Permission check
     if (userId !== req.user.id) {
-      const roleHierarchy = { ADMIN: 4, SS: 3, DISTRIBUTOR: 2, RETAILER: 1 };
-      
+      const roleHierarchy = {
+        ADMIN: 4,
+        SS: 3,
+        DISTRIBUTOR: 2,
+        RETAILER: 1
+      };
+
       if (req.user.role !== 'ADMIN') {
-        const [targetRows] = await db.query('SELECT id, parent_id, role FROM users WHERE id = ?', [userId]);
-        const targetUser = targetRows[0];
-        
-        if (!targetUser || roleHierarchy[targetUser.role] >= roleHierarchy[req.user.role]) {
-          return res.status(403).json({ error: 'Access denied' });
+        const targetResult = await db.query(
+          `
+          SELECT id, parent_id, role
+          FROM public.users
+          WHERE id = $1
+          `,
+          [userId]
+        );
+
+        const targetUser = targetResult.rows[0];
+
+        if (
+          !targetUser ||
+          roleHierarchy[targetUser.role] >= roleHierarchy[req.user.role]
+        ) {
+          return res.status(403).json({
+            error: 'Access denied'
+          });
         }
-        
-        // Check hierarchy with async queries
+
+        // Check hierarchy
         let current = userId;
         const visited = new Set();
         let isDescendant = false;
-        
+
         while (current && !visited.has(current)) {
           visited.add(current);
+
           if (current === req.user.id) {
             isDescendant = true;
             break;
           }
-          const [uRows] = await db.query('SELECT parent_id FROM users WHERE id = ?', [current]);
-          current = uRows[0]?.parent_id;
+
+          const uResult = await db.query(
+            `
+            SELECT parent_id
+            FROM public.users
+            WHERE id = $1
+            `,
+            [current]
+          );
+
+          current = uResult.rows[0]?.parent_id;
         }
-        
+
         if (!isDescendant) {
-          return res.status(403).json({ error: 'Access denied' });
+          return res.status(403).json({
+            error: 'Access denied'
+          });
         }
       }
     }
-    
-    // UPDATED: Removed purchase_price/sale_price/gst, added new 4-tier pricing and items_per_unit
-    const [stock] = await db.query(`
-      SELECT s.product_id, s.quantity, p.name, p.sku, p.unit, p.items_per_unit, 
-             p.ss_price, p.distributor_price, p.retail_price, p.mrp, p.min_stock
-      FROM stock s
-      JOIN products p ON s.product_id = p.id
-      WHERE s.user_id = ?
-      ORDER BY p.name
-    `, [userId]);
-    
-    res.json(stock);
+
+    // =====================================================
+    // Get stock
+    // =====================================================
+    const result = await db.query(
+      `
+      SELECT
+        s.product_id,
+        s.quantity,
+        p.name,
+        p.sku,
+        p.unit,
+        p.items_per_unit,
+        p.ss_price,
+        p.distributor_price,
+        p.retail_price,
+        p.mrp,
+        p.min_stock
+      FROM public.stock AS s
+      INNER JOIN public.products AS p
+        ON s.product_id = p.id
+      WHERE s.user_id = $1
+      ORDER BY p.name ASC
+      `,
+      [userId]
+    );
+
+    res.json(result.rows);
+
   } catch (err) {
     console.error('Error fetching stock:', err);
-    res.status(500).json({ error: 'Failed to fetch stock' });
+
+    res.status(500).json({
+      error: 'Failed to fetch stock',
+      details: process.env.NODE_ENV === 'development'
+        ? err.message
+        : undefined
+    });
   }
 });
 
-// Get low stock items for a user
+
+// =====================================================
+// Get low stock items
+// =====================================================
 router.get('/low-stock', async (req, res) => {
   try {
-    const userId = req.query.userId ? parseInt(req.query.userId, 10) : req.user.id;
-    
-    const [lowStock] = await db.query(`
-      SELECT s.product_id, s.quantity, p.name, p.sku, p.min_stock
-      FROM stock s
-      JOIN products p ON s.product_id = p.id
-      WHERE s.user_id = ? AND s.quantity <= p.min_stock
+    const userId = req.query.userId
+      ? parseInt(req.query.userId, 10)
+      : req.user.id;
+
+    if (!Number.isInteger(userId)) {
+      return res.status(400).json({
+        error: 'Invalid userId'
+      });
+    }
+
+    const result = await db.query(
+      `
+      SELECT
+        s.product_id,
+        s.quantity,
+        p.name,
+        p.sku,
+        p.unit,
+        p.items_per_unit,
+        p.min_stock
+      FROM public.stock AS s
+      INNER JOIN public.products AS p
+        ON s.product_id = p.id
+      WHERE
+        s.user_id = $1
+        AND s.quantity <= p.min_stock
       ORDER BY s.quantity ASC
-    `, [userId]);
-    
-    res.json(lowStock);
+      `,
+      [userId]
+    );
+
+    res.json(result.rows);
+
   } catch (err) {
     console.error('Error fetching low stock:', err);
-    res.status(500).json({ error: 'Failed to fetch low stock items' });
+
+    res.status(500).json({
+      error: 'Failed to fetch low stock items'
+    });
   }
 });
 
+
+// =====================================================
 // Add opening stock (Admin only)
+// =====================================================
 router.post('/add', async (req, res) => {
   try {
     if (req.user.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Only admin can add opening stock' });
+      return res.status(403).json({
+        error: 'Only admin can add opening stock'
+      });
     }
-    
-    const { userId, productId, quantity } = req.body;
-    if (!userId || !productId || quantity === undefined) {
-      return res.status(400).json({ error: 'userId, productId, and quantity are required' });
+
+    const userId = parseInt(req.body.userId, 10);
+    const productId = parseInt(req.body.productId, 10);
+    const quantity = parseInt(req.body.quantity, 10);
+
+    if (
+      !Number.isInteger(userId) ||
+      !Number.isInteger(productId) ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0
+    ) {
+      return res.status(400).json({
+        error: 'Valid userId, productId, and positive quantity are required'
+      });
     }
-    
-    // MySQL syntax for upsert (Insert, or update on duplicate key)
-    await db.query(`
-      INSERT INTO stock (user_id, product_id, quantity)
-      VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE quantity = quantity + ?
-    `, [userId, productId, quantity, quantity]);
-    
-    res.json({ success: true, message: 'Stock added successfully' });
+
+    await db.query(
+      `
+      INSERT INTO public.stock (
+        user_id,
+        product_id,
+        quantity
+      )
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, product_id)
+      DO UPDATE SET
+        quantity = public.stock.quantity + EXCLUDED.quantity
+      `,
+      [userId, productId, quantity]
+    );
+
+    res.json({
+      success: true,
+      message: 'Stock added successfully'
+    });
+
   } catch (err) {
     console.error('Error adding stock:', err);
-    res.status(500).json({ error: 'Failed to add stock' });
+
+    res.status(500).json({
+      error: 'Failed to add stock'
+    });
   }
 });
 
+
+// =====================================================
 // Get stock transactions
+// =====================================================
 router.get('/transactions', async (req, res) => {
   try {
-    const { userId, limit = 50 } = req.query;
-    
+    const userId = req.query.userId
+      ? parseInt(req.query.userId, 10)
+      : null;
+
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 50, 1),
+      500
+    );
+
     let query = `
-      SELECT st.*, p.name as product_name,
-        from_u.name as from_name, to_u.name as to_name
-      FROM stock_transactions st
-      JOIN products p ON st.product_id = p.id
-      LEFT JOIN users from_u ON st.from_id = from_u.id
-      LEFT JOIN users to_u ON st.to_id = to_u.id
-      WHERE 1=1
+      SELECT
+        st.*,
+        p.name AS product_name,
+        from_u.name AS from_name,
+        to_u.name AS to_name
+      FROM public.stock_transactions AS st
+      INNER JOIN public.products AS p
+        ON st.product_id = p.id
+      LEFT JOIN public.users AS from_u
+        ON st.from_id = from_u.id
+      LEFT JOIN public.users AS to_u
+        ON st.to_id = to_u.id
+      WHERE 1 = 1
     `;
+
     const params = [];
-    
-    if (userId) {
-      query += ' AND (st.from_id = ? OR st.to_id = ?)';
+    let paramIndex = 1;
+
+    if (userId !== null) {
+      query += `
+        AND (
+          st.from_id = $${paramIndex}
+          OR st.to_id = $${paramIndex + 1}
+        )
+      `;
+
       params.push(userId, userId);
+      paramIndex += 2;
     }
-    
-    query += ' ORDER BY st.created_at DESC LIMIT ?';
-    params.push(parseInt(limit, 10)); // Ensure limit is passed as an integer to avoid MySQL syntax errors
-    
-    const [transactions] = await db.query(query, params);
-    res.json(transactions);
+
+    query += `
+      ORDER BY st.created_at DESC
+      LIMIT $${paramIndex}
+    `;
+
+    params.push(limit);
+
+    const result = await db.query(query, params);
+
+    res.json(result.rows);
+
   } catch (err) {
     console.error('Error fetching transactions:', err);
-    res.status(500).json({ error: 'Failed to fetch stock transactions' });
+
+    res.status(500).json({
+      error: 'Failed to fetch stock transactions'
+    });
   }
 });
 
-// Admin update / set exact stock quantity for any user and product
+
+// =====================================================
+// Admin update / set exact stock quantity
+// =====================================================
 router.put('/update', async (req, res) => {
   try {
     if (req.user.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Only admin can update stock directly' });
+      return res.status(403).json({
+        error: 'Only admin can update stock directly'
+      });
     }
-    
-    const { userId, productId, quantity } = req.body;
-    if (!userId || !productId || quantity === undefined) {
-      return res.status(400).json({ error: 'userId, productId, and quantity are required' });
+
+    const userId = parseInt(req.body.userId, 10);
+    const productId = parseInt(req.body.productId, 10);
+    const quantity = parseInt(req.body.quantity, 10);
+
+    if (
+      !Number.isInteger(userId) ||
+      !Number.isInteger(productId) ||
+      !Number.isInteger(quantity) ||
+      quantity < 0
+    ) {
+      return res.status(400).json({
+        error: 'Valid userId, productId, and non-negative quantity are required'
+      });
     }
-    
-    await db.query(`
-      INSERT INTO stock (user_id, product_id, quantity)
-      VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE quantity = ?
-    `, [userId, productId, quantity, quantity]);
-    
-    res.json({ success: true, message: 'Stock updated successfully' });
+
+    await db.query(
+      `
+      INSERT INTO public.stock (
+        user_id,
+        product_id,
+        quantity
+      )
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, product_id)
+      DO UPDATE SET
+        quantity = EXCLUDED.quantity
+      `,
+      [userId, productId, quantity]
+    );
+
+    res.json({
+      success: true,
+      message: 'Stock updated successfully'
+    });
+
   } catch (err) {
     console.error('Error updating stock:', err);
-    res.status(500).json({ error: 'Failed to update stock' });
+
+    res.status(500).json({
+      error: 'Failed to update stock'
+    });
   }
 });
 
-// Transfer stock from current user (Admin/SS) to a lower tier user (Distributor/Retailer)
+
+// =====================================================
+// Transfer stock
+// =====================================================
 router.post('/transfer', async (req, res) => {
-  const connection = await db.getConnection();
+  const client = await db.connect();
+
   try {
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const { toUserId, productId, quantity } = req.body;
+    const toUserId = parseInt(req.body.toUserId, 10);
+    const productId = parseInt(req.body.productId, 10);
+    const qty = parseInt(req.body.quantity, 10);
+
     const fromUserId = req.user.id;
-    const qty = parseInt(quantity, 10);
 
-    if (!toUserId || !productId || isNaN(qty) || qty <= 0) {
-      connection.release();
-      return res.status(400).json({ error: 'Valid recipient, product, and quantity are required' });
+    if (
+      !Number.isInteger(toUserId) ||
+      !Number.isInteger(productId) ||
+      !Number.isInteger(qty) ||
+      qty <= 0
+    ) {
+      await client.query('ROLLBACK');
+      client.release();
+
+      return res.status(400).json({
+        error: 'Valid recipient, product, and positive quantity are required'
+      });
     }
 
-    // 1. Check if sender has enough stock
-    const [senderStockRows] = await connection.query(
-      'SELECT quantity FROM stock WHERE user_id = ? AND product_id = ?',
+    if (toUserId === fromUserId) {
+      await client.query('ROLLBACK');
+      client.release();
+
+      return res.status(400).json({
+        error: 'You cannot transfer stock to yourself'
+      });
+    }
+
+    // =================================================
+    // 1. Check sender stock
+    // =================================================
+    const senderStockResult = await client.query(
+      `
+      SELECT quantity
+      FROM public.stock
+      WHERE user_id = $1
+        AND product_id = $2
+      FOR UPDATE
+      `,
       [fromUserId, productId]
     );
-    const senderQty = senderStockRows[0]?.quantity || 0;
+
+    const senderQty = Number(
+      senderStockResult.rows[0]?.quantity || 0
+    );
 
     if (req.user.role !== 'ADMIN' && senderQty < qty) {
-      await connection.rollback();
-      connection.release();
-      return res.status(400).json({ error: `Insufficient stock. You only have ${senderQty} available.` });
+      await client.query('ROLLBACK');
+      client.release();
+
+      return res.status(400).json({
+        error: `Insufficient stock. You only have ${senderQty} available.`
+      });
     }
 
-    // 2. Deduct from sender's stock (if not admin, or even admin to maintain accuracy)
-    await connection.query(
-      'UPDATE stock SET quantity = quantity - ? WHERE user_id = ? AND product_id = ?',
+    // =================================================
+    // 2. Deduct sender stock
+    // =================================================
+    await client.query(
+      `
+      UPDATE public.stock
+      SET quantity = quantity - $1
+      WHERE user_id = $2
+        AND product_id = $3
+      `,
       [qty, fromUserId, productId]
     );
 
-    // 3. Add to recipient's stock (Upsert)
-    await connection.query(`
-      INSERT INTO stock (user_id, product_id, quantity)
-      VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE quantity = quantity + ?
-    `, [toUserId, productId, qty, qty]);
+    // =================================================
+    // 3. Add recipient stock
+    // =================================================
+    await client.query(
+      `
+      INSERT INTO public.stock (
+        user_id,
+        product_id,
+        quantity
+      )
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, product_id)
+      DO UPDATE SET
+        quantity = public.stock.quantity + EXCLUDED.quantity
+      `,
+      [toUserId, productId, qty]
+    );
 
-    // 4. Record transaction log with matching column and value counts
-    await connection.query(`
-      INSERT INTO stock_transactions (from_id, to_id, product_id, quantity, type, date)
-      VALUES (?, ?, ?, ?, 'TRANSFER', NOW())
-    `, [fromUserId, toUserId, productId, qty]);
+    // =================================================
+    // 4. Record transaction
+    // =================================================
+    await client.query(
+      `
+      INSERT INTO public.stock_transactions (
+        from_id,
+        to_id,
+        product_id,
+        quantity,
+        type,
+        date
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        'TRANSFER',
+        CURRENT_DATE
+      )
+      `,
+      [fromUserId, toUserId, productId, qty]
+    );
 
-    await connection.commit();
-    connection.release();
+    await client.query('COMMIT');
+    client.release();
 
-    res.json({ success: true, message: 'Stock transferred successfully' });
+    res.json({
+      success: true,
+      message: 'Stock transferred successfully'
+    });
+
   } catch (err) {
-    await connection.rollback();
-    connection.release();
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Rollback error:', rollbackError);
+    }
+
+    client.release();
+
     console.error('Error transferring stock:', err);
-    res.status(500).json({ error: 'Failed to transfer stock' });
+
+    res.status(500).json({
+      error: 'Failed to transfer stock'
+    });
   }
 });
 
 module.exports = router;
+

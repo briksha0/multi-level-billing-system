@@ -1,9 +1,10 @@
+// src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from 'react'
 import { api } from '../api.js'
 
 const AuthContext = createContext()
 
-// Demo credentials for display on login page
+// Demo credentials for display on login page matching PostgreSQL database seed
 const DEMO_USERS = [
   { id: 1, username: 'admin', role: 'ADMIN', name: 'System Admin' },
   { id: 2, username: 'ss_agra', role: 'SS', name: 'SS Agra' },
@@ -17,13 +18,21 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const initAuth = async () => {
-      const token = api.getToken()
+      const token = api.getToken ? api.getToken() : localStorage.getItem('mlb_token')
       if (token) {
         try {
           const data = await api.getMe()
-          setUser(data.user)
+          if (data && data.user) {
+            setUser(data.user)
+          } else {
+            api.clearToken ? api.clearToken() : localStorage.removeItem('mlb_token')
+          }
         } catch (err) {
-          api.clearToken()
+          if (api.clearToken) {
+            api.clearToken()
+          } else {
+            localStorage.removeItem('mlb_token')
+          }
         }
       }
       setLoading(false)
@@ -34,24 +43,35 @@ export function AuthProvider({ children }) {
   const login = async (username, password) => {
     try {
       const data = await api.login(username, password)
-      api.setToken(data.token)
-      setUser(data.user)
-      
-      return { success: true, user: data.user }
+      if (data && data.token) {
+        if (api.setToken) {
+          api.setToken(data.token)
+        } else {
+          localStorage.setItem('mlb_token', data.token)
+        }
+        setUser(data.user)
+        return { success: true, user: data.user }
+      } else {
+        return { success: false, error: data?.error || 'Invalid login response' }
+      }
     } catch (err) {
-      return { success: false, error: err.message }
+      return { success: false, error: err.message || 'Authentication failed' }
     }
   }
 
   const logout = () => {
-    api.clearToken()
+    if (api.clearToken) {
+      api.clearToken()
+    } else {
+      localStorage.removeItem('mlb_token')
+    }
     setUser(null)
   }
 
   const hasPermission = (requiredRole) => {
     if (!user) return false
     const hierarchy = { ADMIN: 4, SS: 3, DISTRIBUTOR: 2, RETAILER: 1 }
-    return hierarchy[user.role] >= hierarchy[requiredRole]
+    return (hierarchy[user.role] || 0) >= (hierarchy[requiredRole] || 0)
   }
 
   const getRoleHomeRoute = (role) => {
