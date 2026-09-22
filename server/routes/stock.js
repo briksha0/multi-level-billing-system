@@ -41,10 +41,14 @@ router.get('/', async (req, res) => {
         );
 
         const targetUser = targetResult.rows[0];
+        const isRetailerParent =
+          req.user.role === 'RETAILER' &&
+          targetUser?.role === 'DISTRIBUTOR' &&
+          Number(targetUser.id) === Number(req.user.parent_id);
 
         if (
           !targetUser ||
-          roleHierarchy[targetUser.role] >= roleHierarchy[req.user.role]
+          (roleHierarchy[targetUser.role] >= roleHierarchy[req.user.role] && !isRetailerParent)
         ) {
           return res.status(403).json({
             error: 'Access denied'
@@ -54,7 +58,7 @@ router.get('/', async (req, res) => {
         // Check hierarchy
         let current = userId;
         const visited = new Set();
-        let isDescendant = false;
+        let isDescendant = isRetailerParent;
 
         while (current && !visited.has(current)) {
           visited.add(current);

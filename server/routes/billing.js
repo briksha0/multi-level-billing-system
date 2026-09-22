@@ -121,7 +121,7 @@ async function resolveBillType(user, buyerId) {
     if (!(await validateBuyer(user.id, buyerId, user.role))) {
       return { status: 403, error: 'Invalid buyer - must be your distributor or retailer' };
     }
-    const buyerResult = await db.query('SELECT role FROM users WHERE id =1', [buyerId]);
+    const buyerResult = await db.query('SELECT role FROM users WHERE id = $1', [buyerId]);
     const buyer = buyerResult.rows[0];
     if (!buyer) return { status: 400, error: 'Invalid buyer' };
     return { billType: buyer.role === 'DISTRIBUTOR' ? 'SS_TO_DIST' : 'SS_TO_RETAIL' };
@@ -266,7 +266,7 @@ router.post('/', async (req, res) => {
       for (const item of billItems) {
         await client.query(
           'INSERT INTO bill_items (bill_id, product_id, quantity, rate, gst, amount) VALUES ($1, $2, $3, $4, $5, $6)',
-          [billId, item.productId, item.quantity, item.rate, item.gstAmount, item.amount]
+          [billId, item.productId, item.quantity, item.rate, item.gstRate, item.amount]
         );
       }
 
@@ -387,6 +387,59 @@ router.post('/:billId/payments', async (req, res) => {
     client.release();
     console.error('Payment error:', err);
     res.status(500).json({ error: 'Failed to record payment' });
+  }
+});
+
+// Set a bill's payment status from the billing screen.
+router.patch('/:billId/payment-status', async (req, res) => {
+  const client = await db.connect();
+  try {
+    const { status, method = 'Cash' } = req.body;
+    if (!['PAID', 'PENDING'].includes(status)) {
+      client.release();
+      return res.status(400).json({ error: 'Status must be PAID or PENDING' });
+    }
+
+    const billResult = await client.query('SELECT * FROM bills WHERE id = $1', [req.params.billId]);
+    const bill = billResult.rows[0];
+    if (!bill) {
+      client.release();
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+    if (bill.seller_id !== req.user.id && req.user.role !== 'ADMIN') {
+      client.release();
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    await client.query('BEGIN');
+    if (status === 'PENDING') {
+      await client.query('DELETE FROM payments WHERE bill_id = $1', [bill.id]);
+      await client.query(
+        "UPDATE bills SET paid_amount = 0, due_amount = grand_total, payment_status = 'PENDING' WHERE id = $1",
+        [bill.id]
+      );
+    } else {
+      const dueAmount = Math.max(0, Number(bill.grand_total) - Number(bill.paid_amount));
+      if (dueAmount > 0.01) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        await client.query(
+          'INSERT INTO payments (bill_id, amount, method, date) VALUES ($1, $2, $3, $4)',
+          [bill.id, dueAmount, method, todayStr]
+        );
+      }
+      await client.query(
+        "UPDATE bills SET paid_amount = grand_total, due_amount = 0, payment_status = 'PAID' WHERE id = $1",
+        [bill.id]
+      );
+    }
+    await client.query('COMMIT');
+    client.release();
+    res.json({ success: true, status });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    client.release();
+    console.error('Payment status update error:', err);
+    res.status(500).json({ error: 'Failed to update payment status' });
   }
 });
 

@@ -11,7 +11,8 @@ require('./db/init');
 
 // 4. Initialize Express app BEFORE using app.use()
 const app = express();
-const PORT = process.env.PORT || 3001;
+const requestedPort = Number(process.env.PORT);
+const PORT = Number.isInteger(requestedPort) && requestedPort > 0 ? requestedPort : 3002;
 
 // 5. Middleware
 app.use(cors());
