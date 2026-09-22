@@ -64,7 +64,7 @@ export default function AdminDashboard() {
         <MetricCard icon={Package} label="Products" value={data.products.length} iconColor="text-purple-500" iconBg="bg-purple-500/15" />
         <MetricCard icon={Warehouse} label="Total Stock" value={(summary?.totalStock || 0).toLocaleString()} iconColor="text-brand-500" iconBg="bg-brand-500/15" />
         <MetricCard icon={TrendingUp} label="Today's Sales" value={`₹${(summary?.todaySales || 0).toLocaleString()}`} subValueColor="text-emerald-400" iconColor="text-accent-500" iconBg="bg-accent-500/15" />
-        <MetricCard icon={DollarSign} label="Pending Payments" value={`₹${(summary?.pendingPayments || 0).toLocaleString()}`} subValueColor="text-red-400" iconColor="text-red-500" iconBg="bg-red-500/15" />
+        <MetricCard icon={IndianRupee} label="Pending Payments" value={`₹${(summary?.pendingPayments || 0).toLocaleString()}`} subValueColor="text-red-400" iconColor="text-red-500" iconBg="bg-red-500/15" />
         <MetricCard icon={AlertTriangle} label="Low Stock Items" value={summary?.lowStock ?? lowStock.length} subValue={lowStock.length > 0 ? "Needs attention" : ""} subValueColor="text-amber-400" iconColor="text-amber-500" iconBg="bg-amber-500/15" />
       </div>
       
