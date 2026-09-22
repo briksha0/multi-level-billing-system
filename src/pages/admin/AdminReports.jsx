@@ -8,7 +8,7 @@ import { api } from '../../api.js'
 export default function AdminReports() {
   const { data, getUserById } = useData()
   const [activeTab, setActiveTab] = useState('sales')
-  const [timeFilter, setTimeFilter] = useState('all') // 'all' | 'year' | 'month'
+  const [timeFilter, setTimeFilter] = useState('all') // 'all' | 'year' | 'month' | 'week'
   
   const [users, setUsers] = useState([])
   const [bills, setBills] = useState([])
@@ -37,18 +37,30 @@ export default function AdminReports() {
     fetchAdminReportData()
   }, [data?.users, data?.bills])
 
-  // Filter bills based on selected time range (All Time, Yearly, Monthly)
+  // Filter bills based on selected time range (All Time, Yearly, Monthly, Weekly)
   const now = new Date()
   const currentYear = now.getFullYear().toString()
   const currentMonth = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
+  // Calculate start of the current week (Sunday baseline)
+  const startOfWeek = new Date(now)
+  startOfWeek.setDate(now.getDate() - now.getDay())
+  startOfWeek.setHours(0, 0, 0, 0)
+
   const filteredBills = bills.filter(b => {
-    const rawDate = b.billDate || b.created_at || ''
+    const rawDateStr = b.billDate || b.created_at || ''
+    if (!rawDateStr) return timeFilter === 'all'
+    
+    const billDate = new Date(rawDateStr)
+
     if (timeFilter === 'year') {
-      return rawDate.startsWith(currentYear)
+      return rawDateStr.startsWith(currentYear)
     }
     if (timeFilter === 'month') {
-      return rawDate.startsWith(currentMonth)
+      return rawDateStr.startsWith(currentMonth)
+    }
+    if (timeFilter === 'week') {
+      return billDate >= startOfWeek && billDate <= now
     }
     return true // 'all'
   })
@@ -143,7 +155,7 @@ export default function AdminReports() {
     const sub = Number(b.subtotal ?? b.sub_total ?? 0)
     const gstAmt = Number(b.gst ?? b.tax ?? (sub * 0.18))
     const disc = Number(b.discount ?? 0)
-    const gTotal = Number(b.grandTotal ?? b.grand_total ?? bill.total ?? (sub + gstAmt - disc))
+    const gTotal = Number(b.grandTotal ?? b.grand_total ?? b.total ?? (sub + gstAmt - disc))
 
     if (!monthlyData[month]) monthlyData[month] = 0
     monthlyData[month] += gTotal
@@ -164,7 +176,7 @@ export default function AdminReports() {
     const sub = Number(b.subtotal ?? b.sub_total ?? 0)
     const gstAmt = Number(b.gst ?? b.tax ?? (sub * 0.18))
     const disc = Number(b.discount ?? 0)
-    const gTotal = Number(b.grandTotal ?? b.grand_total ?? bill.total ?? (sub + gstAmt - disc))
+    const gTotal = Number(b.grandTotal ?? b.grand_total ?? b.total ?? (sub + gstAmt - disc))
     const paid = Number(b.paidAmount || b.paid_amount || 0)
     const dueStored = Number(b.dueAmount || b.due_amount || (gTotal - paid))
     return sum + (dueStored > 0 ? dueStored : 0)
@@ -232,7 +244,7 @@ export default function AdminReports() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ₹{
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
                 activeTab === tab.id
                   ? 'bg-brand-500/15 text-brand-400 border border-brand-500/50 shadow-md'
                   : 'bg-dark-card border border-dark-border text-dark-muted hover:text-white'

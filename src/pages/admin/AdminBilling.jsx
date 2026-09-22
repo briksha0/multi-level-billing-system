@@ -128,6 +128,38 @@ export default function AdminBilling() {
     }
   }
 
+// Add this handler function inside your AdminBilling component
+const handleTogglePaymentStatus = async (bill) => {
+  const isCurrentlyPaid = (bill.payment_status || bill.paymentStatus) === 'PAID';
+  const totalAmount = Number(bill.grand_total ?? bill.grandTotal ?? ((bill.subtotal || 0) + (bill.gst || 0)));
+  
+  // If currently PAID, toggle to PENDING (paid_amount = 0). If PENDING/PARTIAL, toggle to PAID (paid_amount = totalAmount)
+  const newPaidAmount = isCurrentlyPaid ? 0 : totalAmount;
+  const paymentMethod = bill.payment_method || 'Bank Transfer';
+
+  try {
+    const response = await fetch(`/api/bills/${bill.id}/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
+      },
+      body: JSON.stringify({ 
+        amount: isCurrentlyPaid ? -Number(bill.paid_amount || totalAmount) : totalAmount, 
+        method: paymentMethod 
+      })
+    });
+
+    // Alternatively, if you want a direct status update endpoint or full amount settlement:
+    // Refresh bills list from server
+    const updatedBills = await api.getBills('sales');
+    setSalesBills(Array.isArray(updatedBills) ? updatedBills : []);
+  } catch (err) {
+    console.error('Failed to update payment status:', err);
+    alert('Failed to update payment status');
+  }
+};
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -160,73 +192,86 @@ export default function AdminBilling() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-dark-bg/50">
-                <th className="table-header px-6 py-4">#</th>
-                <th className="table-header px-6 py-4">Billing Date</th>
-                <th className="table-header px-6 py-4">Buyer Name</th>
-                <th className="table-header px-6 py-4 text-right">Subtotal</th>
-                <th className="table-header px-6 py-4 text-right">GST (18%)</th>
-                <th className="table-header px-6 py-4 text-right">Amount (₹)</th>
-                <th className="table-header px-6 py-4 text-center">Status</th>
-                <th className="table-header px-6 py-4 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {salesBills.map((bill, index) => {
-                const buyer = bill.buyerId ? getUserById(bill.buyerId) : null
-                const buyerName = buyer?.name || bill.buyerName || bill.buyer_name || 'Partner / SS'
-                const formattedDate = bill.billDate || bill.created_at || bill.date ? new Date(bill.billDate || bill.created_at || bill.date).toLocaleDateString() : '-'
-                
-                const subtotalValue = Number(bill.subtotal || 0)
-                const gstValue = Number(bill.gst || 0)
-                const discountValue = Number(bill.discount || 0)
-                const totalNetAmount = Number(bill.grand_total ?? bill.grandTotal ?? (subtotalValue - discountValue + gstValue))
-                
-                const paidAmount = Number(bill.paid_amount ?? bill.paidAmount ?? 0)
-                const remainingAmount = totalNetAmount - paidAmount
-                
-                const paymentStatus = remainingAmount <= 0
-                  ? 'PAID'
-                  : remainingAmount < totalNetAmount
-                    ? 'PARTIAL'
-                    : (bill.payment_status || bill.paymentStatus || 'PENDING').toUpperCase()
-                
-                const statusClasses = paymentStatus === 'PAID'
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                  : paymentStatus === 'PARTIAL'
-                    ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                    : 'bg-red-500/15 text-red-400 border border-red-500/30'
+        
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-dark-bg/50">
+                      <th className="table-header px-6 py-4">#</th>
+                      <th className="table-header px-6 py-4">Billing Date</th>
+                      <th className="table-header px-6 py-4">Buyer Name</th>
+                      <th className="table-header px-6 py-4 text-right">Subtotal</th>
+                      <th className="table-header px-6 py-4 text-right">GST (18%)</th>
+                      <th className="table-header px-6 py-4 text-right">Amount (₹)</th>
+                      <th className="table-header px-6 py-4 text-right">Paid Amount</th>
+                      <th className="table-header px-6 py-4 text-right">Remaining Due</th>
+                      <th className="table-header px-6 py-4 text-center">Status</th>
+                      <th className="table-header px-6 py-4 text-center">Action</th>
+                    </tr>
+                  </thead>
+                 <tbody>
+  {salesBills.map((bill, index) => {
+    const buyer = bill.buyerId ? getUserById(bill.buyerId) : null
+    const buyerName = buyer?.name || bill.buyerName || bill.buyer_name || 'Partner / SS'
+    const formattedDate = bill.billDate || bill.created_at || bill.date ? new Date(bill.billDate || bill.created_at || bill.date).toLocaleDateString() : '-'
+    
+    const subtotalValue = Number(bill.subtotal || 0)
+    const gstValue = Number(bill.gst || 0)
+    const discountValue = Number(bill.discount || 0)
+    const totalNetAmount = Number(bill.grand_total ?? bill.grandTotal ?? (subtotalValue - discountValue + gstValue))
+    
+    const paidAmount = Number(bill.paid_amount ?? bill.paidAmount ?? 0)
+    const remainingAmount = Math.max(0, totalNetAmount - paidAmount)
+    
+    const paymentStatus = remainingAmount <= 0.01 ? 'PAID' : 'PENDING'
+    const isPaid = paymentStatus === 'PAID';
 
-                return (
-                  <tr key={bill.id || index} className="table-row">
-                    <td className="px-6 py-4 font-mono text-sm text-brand-400 font-medium">{index + 1}</td>
-                    <td className="px-6 py-4 text-dark-muted font-medium">{formattedDate}</td>
-                    <td className="px-6 py-4 text-white font-semibold">{buyerName}</td>
-                    <td className="px-6 py-4 text-right text-dark-muted">₹{subtotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-dark-muted">₹{gstValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-white font-bold">₹{totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusClasses}`}>
-                        {paymentStatus}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button onClick={() => setSelectedBill(bill)} className="text-accent-400 hover:text-accent-300 text-sm font-medium">
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-              {salesBills.length === 0 && (
-                <tr><td colSpan="8" className="text-center py-12 text-dark-muted">No bills created yet</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+    return (
+      <tr key={bill.id || index} className="table-row">
+        <td className="px-6 py-4 font-mono text-sm text-brand-400 font-medium">{index + 1}</td>
+        <td className="px-6 py-4 text-dark-muted font-medium">{formattedDate}</td>
+        <td className="px-6 py-4 text-white font-semibold">{buyerName}</td>
+        <td className="px-6 py-4 text-right text-dark-muted">₹{subtotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td className="px-6 py-4 text-right text-dark-muted">₹{gstValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td className="px-6 py-4 text-right text-white font-bold">₹{totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td className="px-6 py-4 text-right text-emerald-400 font-medium">₹{paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td className="px-6 py-4 text-right text-amber-400 font-medium">₹{remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        
+        {/* Interactive Toggle Switch Cell matching your Red/Green styling */}
+        <td className="px-6 py-4 text-center">
+          <button
+            type="button"
+            onClick={() => handleTogglePaymentStatus(bill)}
+            className={`relative inline-flex h-7 w-20 items-center rounded-full transition-colors focus:outline-none shadow-inner ${
+              isPaid ? 'bg-emerald-600' : 'bg-red-600'
+            }`}
+            title={`Click to mark as ${isPaid ? 'Pending' : 'Paid'}`}
+          >
+            <span className={`absolute text-[10px] font-bold uppercase tracking-wider text-white ${isPaid ? 'left-4' : 'right-2'}`}>
+              {isPaid ? 'paid' : 'unpaid'}
+            </span>
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform shadow-md ${
+                isPaid ? 'translate-x-14' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </td>
+
+        <td className="px-6 py-4 text-center">
+          <button onClick={() => setSelectedBill(bill)} className="text-accent-400 hover:text-accent-300 text-sm font-medium">
+            View
+          </button>
+        </td>
+      </tr>
+    )
+  })}
+  {salesBills.length === 0 && (
+    <tr><td colSpan="10" className="text-center py-12 text-dark-muted">No bills created yet</td></tr>
+  )}
+</tbody>
+                </table>
+              </div>
       </div>
 
       {/* Create Bill Modal */}

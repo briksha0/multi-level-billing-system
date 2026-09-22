@@ -29,6 +29,9 @@ import DistributorStock from './pages/distributor/DistributorStock.jsx'
 import DistributorBilling from './pages/distributor/DistributorBilling.jsx'
 import DistributorReports from './pages/distributor/DistributorReports.jsx'
 
+// Retailer Pages
+import RetailerDashboard from './pages/retailer/RetailerDashboard.jsx'
+import RetailerStock from './pages/retailer/RetailerStock.jsx'
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading, getRoleHomeRoute } = useAuth()
@@ -85,6 +88,12 @@ export default function App() {
             <Route path="reports" element={<DistributorReports />} />
           </Route>
 
+          {/* Retailer Routes */}
+                <Route path="/retailer" element={<ProtectedRoute allowedRoles={['ADMIN', 'SS', 'DISTRIBUTOR', 'RETAILER']}><RetailerLayout /></ProtectedRoute>}>
+                  <Route index element={<Navigate to="dashboard" replace />} />
+                  <Route path="dashboard" element={<RetailerDashboard />} />
+                  <Route path="distributor-stock" element={<RetailerStock />} />
+                </Route>
 
 
           <Route path="*" element={<Navigate to="/" replace />} />

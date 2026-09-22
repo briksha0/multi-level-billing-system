@@ -52,9 +52,13 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
         <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-200 print:hidden">
           <h3 className="text-xl font-bold text-slate-900 font-mono">Invoice #{selectedBill.billNumber || selectedBill.bill_number}</h3>
           <div className="flex items-center gap-3">
-            <button onClick={handlePrintInvoice} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-slate-800 transition">
-              <Printer size={16} /> Print
-            </button>
+            <button
+                onClick={handlePrintInvoice}
+                className="bg-green-600 text-black-600 px-5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-green-700 transition"
+              >
+                <Printer size={16} />
+                Print
+              </button>
             <button onClick={onClose} className="bg-slate-100 text-slate-600 px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-200 transition">
               Close
             </button>
