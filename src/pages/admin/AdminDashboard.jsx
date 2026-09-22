@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { api } from '../../api.js'
 import MetricCard from '../../components/MetricCard.jsx'
-import { Building2, Users, Store, Package, Warehouse, TrendingUp, AlertTriangle, DollarSign, ShoppingCart, Loader2 } from 'lucide-react'
+import { Building2, Users, Store, Package, Warehouse, TrendingUp, AlertTriangle, IndianRupee, ShoppingCart, Loader2 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 
 export default function AdminDashboard() {
@@ -64,7 +64,14 @@ export default function AdminDashboard() {
         <MetricCard icon={Package} label="Products" value={data.products.length} iconColor="text-purple-500" iconBg="bg-purple-500/15" />
         <MetricCard icon={Warehouse} label="Total Stock" value={(summary?.totalStock || 0).toLocaleString()} iconColor="text-brand-500" iconBg="bg-brand-500/15" />
         <MetricCard icon={TrendingUp} label="Today's Sales" value={`₹${(summary?.todaySales || 0).toLocaleString()}`} subValueColor="text-emerald-400" iconColor="text-accent-500" iconBg="bg-accent-500/15" />
-        <MetricCard icon={IndianRupee} label="Pending Payments" value={`₹${(summary?.pendingPayments || 0).toLocaleString()}`} subValueColor="text-red-400" iconColor="text-red-500" iconBg="bg-red-500/15" />
+        <MetricCard
+  icon={IndianRupee}
+  label="Pending Payments"
+  value={`₹${(summary?.pendingPayments || 0).toLocaleString('en-IN')}`}
+  subValueColor="text-red-400"
+  iconColor="text-red-500"
+  iconBg="bg-red-500/15"
+/>
         <MetricCard icon={AlertTriangle} label="Low Stock Items" value={summary?.lowStock ?? lowStock.length} subValue={lowStock.length > 0 ? "Needs attention" : ""} subValueColor="text-amber-400" iconColor="text-amber-500" iconBg="bg-amber-500/15" />
       </div>
       

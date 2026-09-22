@@ -5,16 +5,29 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { Warehouse, Package, AlertTriangle, TrendingDown, TrendingUp } from 'lucide-react'
 
 export default function SSStock() {
-  const { data, getUserStock, getLowStockItems } = useData()
+  const { data, getChildren, getUserStock, getLowStockItems } = useData()
   const { user } = useAuth()
 
   const [currentStock, setCurrentStock] = useState({})
   const [lowStockItems, setLowStockItems] = useState([])
-  const targetUserId = user?.id || 2
+  const [distributors, setDistributors] = useState([])
+  const [selectedDistributor, setSelectedDistributor] = useState('')
+  const ssId = user?.id || 2
+
+  useEffect(() => {
+    async function loadDistributors() {
+      const children = await getChildren(ssId, 'DISTRIBUTOR')
+      const safeChildren = Array.isArray(children) ? children : []
+      setDistributors(safeChildren)
+      setSelectedDistributor(current => current && safeChildren.some(d => String(d.id) === current) ? current : '')
+    }
+    loadDistributors()
+  }, [ssId, getChildren])
 
   useEffect(() => {
     async function loadStockData() {
       try {
+        const targetUserId = selectedDistributor || ssId
         const stockData = await getUserStock(targetUserId)
         setCurrentStock(stockData || {})
 
@@ -25,9 +38,11 @@ export default function SSStock() {
       }
     }
     loadStockData()
-  }, [user, getUserStock, getLowStockItems])
+  }, [ssId, selectedDistributor, getUserStock, getLowStockItems])
 
   const products = Array.isArray(data.products) ? data.products : []
+  const selectedDistributorData = distributors.find(d => String(d.id) === selectedDistributor)
+  const inventoryLabel = selectedDistributorData?.name || 'My Stock'
 
   return (
     <div className="space-y-6">
@@ -47,13 +62,28 @@ export default function SSStock() {
       )}
       
       <div className="bg-dark-card border border-dark-border rounded-2xl overflow-hidden">
-        <div className="p-6 border-b border-dark-border flex items-center gap-3">
+        <div className="p-6 border-b border-dark-border flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-accent-500/15 flex items-center justify-center text-accent-500"><Warehouse size={20} /></div>
           <div>
-            <div className="font-semibold text-white">Current Stock</div>
-            <div className="text-xs text-dark-muted">Super Store Inventory</div>
+            <div className="font-semibold text-white">{inventoryLabel} Stock</div>
+            <div className="text-xs text-dark-muted">Inventory levels by distributor</div>
           </div>
-        </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-dark-muted">
+            <span>Distributor</span>
+            <select
+              value={selectedDistributor}
+              onChange={(e) => setSelectedDistributor(e.target.value)}
+              className="input-field w-auto min-w-48 text-sm"
+            >
+              <option value="">My Stock</option>
+              {distributors.map(distributor => (
+                <option key={distributor.id} value={distributor.id}>{distributor.name}</option>
+              ))}
+            </select>
+          </label>
+          </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[700px]">
             <thead>

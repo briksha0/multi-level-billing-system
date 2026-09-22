@@ -1,4 +1,4 @@
-// src/pages/distributor/DistributorBilling.jsx
+// src/pages/admin/AdminBilling.jsx
 import { useState, useEffect } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -6,49 +6,40 @@ import { FileText, Plus, ShoppingCart, Trash2, Receipt } from 'lucide-react'
 import { api } from '../../api.js'
 import BillingReceipt from '../../components/BillingReceipt.jsx'
 
-export default function DistributorBilling() {
+export default function AdminBilling() {
   const { data, createBill, getUserById, getProductById } = useData()
   const { user } = useAuth()
-  const userId = user?.id || 4
-
+  const [salesBills, setSalesBills] = useState([])
   const [showCreateBill, setShowCreateBill] = useState(false)
   const [selectedBill, setSelectedBill] = useState(null)
   const [currentBillItems, setCurrentBillItems] = useState([])
-  const [salesBills, setSalesBills] = useState([])
-  const [retailers, setRetailers] = useState([])
 
-  const [billForm, setBillForm] = useState({ buyerId: '', items: [], discount: 0, paidAmount: 0, paymentMethod: 'Cash', billType: 'DIST_TO_RETAIL' })
+  const [billForm, setBillForm] = useState({
+    buyerId: '',
+    items: [],
+    discount: 0,
+    paidAmount: 0,
+    paymentMethod: 'Bank Transfer',
+  })
   const [newItem, setNewItem] = useState({ productId: 1, quantity: 1 })
 
-  // Fetch sales bills and retailers asynchronously
-  useEffect(() => {
-    async function fetchDistributorBillingData() {
-      try {
-        const bills = await api.getBills('sales').catch(() => [])
-        setSalesBills(Array.isArray(bills) ? bills : [])
+  const ssUsers = data.users.filter(u => u.role === 'RETAILER' )
 
-        let rets = await api.getChildren('me', 'RETAILER').catch(() => api.getChildren(userId, 'RETAILER'))
-        let list = []
-        if (Array.isArray(rets)) {
-          list = rets
-        } else if (rets && typeof rets === 'object') {
-          list = rets.data || rets.retailers || rets.users || []
-        }
-        if (list.length === 0 && Array.isArray(data?.users)) {
-          list = data.users.filter(u => u.role === 'RETAILER' && (u.parentId === userId || u.parent_id === userId))
-        }
-        setRetailers(list)
+  // Fetch sales bills safely on load
+  useEffect(() => {
+    async function fetchBills() {
+      try {
+        const bills = await api.getBills('sales')
+        setSalesBills(Array.isArray(bills) ? bills : [])
       } catch (err) {
-        console.error('Failed to load distributor billing data:', err)
+        console.error('Failed to fetch sales bills:', err)
         setSalesBills([])
-        const allUsers = Array.isArray(data?.users) ? data.users : []
-        setRetailers(allUsers.filter(u => u.role === 'RETAILER'))
       }
     }
-    fetchDistributorBillingData()
-  }, [userId, data?.users])
+    fetchBills()
+  }, [user])
 
-  // Fetch bill items asynchronously when viewing a bill
+  // Fetch bill items asynchronously when a bill is selected
   useEffect(() => {
     async function fetchItems() {
       if (!selectedBill) {
@@ -69,172 +60,292 @@ export default function DistributorBilling() {
   const addItem = () => {
     const product = getProductById(newItem.productId)
     if (!product) return
-    const rate = Number(product.salePrice || product.ss_price || 0)
+    const rate = product.ss_price || product.salePrice || 0
     const exists = billForm.items.find(i => i.productId === newItem.productId)
     if (exists) {
-      setBillForm(f => ({ ...f, items: f.items.map(i => i.productId === newItem.productId ? { ...i, quantity: i.quantity + parseInt(newItem.quantity, 10) } : i) }))
+      setBillForm(f => ({
+        ...f,
+        items: f.items.map(i => i.productId === newItem.productId
+          ? { ...i, quantity: i.quantity + parseInt(newItem.quantity, 10) }
+          : i
+        )
+      }))
     } else {
-      setBillForm(f => ({ 
-        ...f, 
-        items: [...f.items, { 
-          productId: newItem.productId, 
-          quantity: parseInt(newItem.quantity, 10), 
-          rate: rate, 
+      setBillForm(f => ({
+        ...f,
+        items: [...f.items, {
+          productId: newItem.productId,
+          quantity: parseInt(newItem.quantity, 10),
+          rate: rate,
           productName: product.name,
           hsn: product.hsn || '34029092',
           unit: product.unit || 'Btl'
-        }] 
+        }]
       }))
     }
     setNewItem({ productId: 1, quantity: 1 })
   }
 
-  const removeItem = (productId) => setBillForm(f => ({ ...f, items: f.items.filter(i => i.productId !== productId) }))
+  const removeItem = (productId) => {
+    setBillForm(f => ({ ...f, items: f.items.filter(i => i.productId !== productId) }))
+  }
 
-  const subtotal = billForm.items.reduce((sum, item) => sum + item.quantity * item.rate, 0)
-  const gst = subtotal * 0.18
-  const grandTotal = subtotal + gst - (parseFloat(billForm.discount) || 0)
-  const due = grandTotal - (parseFloat(billForm.paidAmount) || 0)
+  const calculateSubtotal = () => {
+    return billForm.items.reduce((sum, item) => sum + item.quantity * item.rate, 0)
+  }
+
+  // Calculate GST explicitly based on Subtotal amount
+  const calculateGST = (subtotalAmt) => {
+    return subtotalAmt * 0.18
+  }
+
+  const subtotal = calculateSubtotal()
+  const gst = calculateGST(subtotal)
+  const discount = billForm.discount || 0
+  const grandTotal = subtotal - discount + gst
+  const due = grandTotal - (billForm.paidAmount || 0)
 
   const handleCreateBill = async () => {
     if (!billForm.buyerId || billForm.items.length === 0) return
     try {
       await createBill({
-        sellerId: userId,
+        sellerId: user?.id || 1,
         buyerId: parseInt(billForm.buyerId, 10),
-        billType: 'DIST_TO_RETAIL',
-        discount: parseFloat(billForm.discount) || 0,
+        billType: 'ADMIN_TO_SS',
+        discount: parseFloat(discount),
+        gst: parseFloat(gst.toFixed(2)),
         paidAmount: parseFloat(billForm.paidAmount) || 0,
         paymentMethod: billForm.paymentMethod,
       }, billForm.items.map(i => ({ productId: i.productId, quantity: i.quantity, rate: i.rate })))
-      
+
       const updatedBills = await api.getBills('sales')
       setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
 
-      setBillForm({ buyerId: '', items: [], discount: 0, paidAmount: 0, paymentMethod: 'Cash', billType: 'DIST_TO_RETAIL' })
+      setBillForm({ buyerId: '', items: [], discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer' })
       setShowCreateBill(false)
     } catch (err) {
       alert(err.message || 'Failed to create bill')
     }
   }
 
+// Add this handler function inside your AdminBilling component
+const handleTogglePaymentStatus = async (bill) => {
+  const isCurrentlyPaid = (bill.payment_status || bill.paymentStatus) === 'PAID';
+  const totalAmount = Number(bill.grand_total ?? bill.grandTotal ?? ((bill.subtotal || 0) + (bill.gst || 0)));
+  
+  // If currently PAID, toggle to PENDING (paid_amount = 0). If PENDING/PARTIAL, toggle to PAID (paid_amount = totalAmount)
+  const newPaidAmount = isCurrentlyPaid ? 0 : totalAmount;
+  const paymentMethod = bill.payment_method || 'Bank Transfer';
+
+  try {
+    const response = await fetch(`/api/bills/${bill.id}/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
+      },
+      body: JSON.stringify({ 
+        amount: isCurrentlyPaid ? -Number(bill.paid_amount || totalAmount) : totalAmount, 
+        method: paymentMethod 
+      })
+    });
+
+    // Alternatively, if you want a direct status update endpoint or full amount settlement:
+    // Refresh bills list from server
+    const updatedBills = await api.getBills('sales');
+    setSalesBills(Array.isArray(updatedBills) ? updatedBills : []);
+  } catch (err) {
+    console.error('Failed to update payment status:', err);
+    alert('Failed to update payment status');
+  }
+};
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Billing to Retailers</h2>
-          <p className="text-dark-muted text-sm">Create bills and automatically transfer stock downstream</p>
+        <div className="flex items-center gap-3">
+          <img
+            src="https://www.aquauraessentials.com/assets/images/optimized/logo-header.jpg"
+            alt="Aquaura Essentials logo"
+            className="h-12 w-auto rounded-lg border border-dark-border bg-white/5 p-1 object-contain shadow-sm"
+          />
+          <div>
+            <h2 className="text-2xl font-bold text-white">Billing - Admin to SS</h2>
+            <p className="text-dark-muted text-sm">Create bills for Super Stores and automatically transfer stock</p>
+          </div>
         </div>
-        <button onClick={() => setShowCreateBill(true)} className="btn-primary flex items-center gap-2"><Plus size={18} />Create Bill</button>
+        <button onClick={() => setShowCreateBill(true)} className="btn-primary flex items-center gap-2">
+          <Plus size={18} />
+          Create Bill
+        </button>
       </div>
-      
-      <div className="bg-dark-card border border-dark-border rounded-2xl overflow-hidden shadow-xl">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-dark-bg/60 border-b border-dark-border text-xs uppercase tracking-wider text-dark-muted">
-              <th className="px-6 py-4 font-semibold">Bill No.</th>
-              <th className="px-6 py-4 font-semibold">Date</th>
-              <th className="px-6 py-4 font-semibold">Retailer Name</th>
-              <th className="px-6 py-4 font-semibold text-right">Subtotal</th>
-              <th className="px-6 py-4 font-semibold text-right">GST (18%)</th>
-              <th className="px-6 py-4 font-semibold text-right">Grand Total</th>
-              <th className="px-6 py-4 font-semibold text-center">Status</th>
-              <th className="px-6 py-4 font-semibold text-center">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-dark-border/50">
-            {salesBills.map(bill => {
-              const allUsers = Array.isArray(data?.users) ? data.users : []
-              const buyer = getUserById(bill.buyerId || bill.buyer_id) || allUsers.find(u => u.id === (bill.buyerId || bill.buyer_id))
-              const formattedDate = bill.billDate || bill.created_at || bill.date ? new Date(bill.billDate || bill.created_at || bill.date).toLocaleDateString() : '-'
-              
-              const billNum = bill.billNumber || bill.bill_number || `INV-${bill.id}`
-              const buyerName = buyer?.name || bill.buyerName || bill.buyer_name || 'Retail Partner'
-              const pStatus = bill.paymentStatus || bill.payment_status || 'PENDING'
-              
-              const sub = Number(bill.subtotal ?? bill.sub_total ?? 0)
-              const calculatedGst = sub * 0.18
-              const gstAmount = Number(bill.gst ?? bill.tax ?? calculatedGst)
-              const discount = Number(bill.discount ?? 0)
-              const gTotal = Number(bill.grandTotal ?? bill.grand_total ?? bill.total ?? (sub + gstAmount - discount))
 
-              return (
-                <tr key={bill.id} className="hover:bg-white/[0.02] transition-colors">
-                  <td className="px-6 py-4 font-mono text-sm text-emerald-400 font-bold">{billNum}</td>
-                  <td className="px-6 py-4 text-dark-muted text-sm font-medium">{formattedDate}</td>
-                  <td className="px-6 py-4 text-white text-sm font-semibold">{buyerName}</td>
-                  <td className="px-6 py-4 text-right text-dark-muted text-sm">₹{sub.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="px-6 py-4 text-right text-dark-muted text-sm">₹{gstAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="px-6 py-4 text-right text-white font-bold text-sm">₹{gTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="px-6 py-4 text-center">
-                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${pStatus === 'PAID' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : pStatus === 'PARTIAL' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'}`}>
-                      {pStatus}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <button onClick={() => setSelectedBill(bill)} className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-semibold transition">View Invoice</button>
-                  </td>
-                </tr>
-              )
-            })}
-            {salesBills.length === 0 && <tr><td colSpan="8" className="text-center py-16 text-dark-muted text-sm">No bills generated yet. Click "Create Bill" to begin.</td></tr>}
-          </tbody>
-        </table>
+      {/* Bills List */}
+      <div className="bg-dark-card border border-dark-border rounded-2xl overflow-hidden">
+        <div className="p-6 border-b border-dark-border flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-brand-500/15 flex items-center justify-center text-brand-500">
+            <FileText size={20} />
+          </div>
+          <div>
+            <div className="font-semibold text-white">Sales Bills</div>
+            <div className="text-xs text-dark-muted">{salesBills.length} bills issued</div>
+          </div>
+        </div>
+
+        
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-dark-bg/50">
+                      <th className="table-header px-6 py-4">#</th>
+                      <th className="table-header px-6 py-4">Billing Date</th>
+                      <th className="table-header px-6 py-4">Buyer Name</th>
+                      <th className="table-header px-6 py-4 text-right">Subtotal</th>
+                      <th className="table-header px-6 py-4 text-right">GST (18%)</th>
+                      <th className="table-header px-6 py-4 text-right">Amount (₹)</th>
+                      <th className="table-header px-6 py-4 text-right">Paid Amount</th>
+                      <th className="table-header px-6 py-4 text-right">Remaining Due</th>
+                      <th className="table-header px-6 py-4 text-center">Status</th>
+                      <th className="table-header px-6 py-4 text-center">Action</th>
+                    </tr>
+                  </thead>
+                 <tbody>
+  {salesBills.map((bill, index) => {
+    const buyer = bill.buyerId ? getUserById(bill.buyerId) : null
+    const buyerName = buyer?.name || bill.buyerName || bill.buyer_name || 'Partner / SS'
+    const formattedDate = bill.billDate || bill.created_at || bill.date ? new Date(bill.billDate || bill.created_at || bill.date).toLocaleDateString() : '-'
+    
+    const subtotalValue = Number(bill.subtotal || 0)
+    const gstValue = Number(bill.gst || 0)
+    const discountValue = Number(bill.discount || 0)
+    const totalNetAmount = Number(bill.grand_total ?? bill.grandTotal ?? (subtotalValue - discountValue + gstValue))
+    
+    const paidAmount = Number(bill.paid_amount ?? bill.paidAmount ?? 0)
+    const remainingAmount = Math.max(0, totalNetAmount - paidAmount)
+    
+    const paymentStatus = remainingAmount <= 0.01 ? 'PAID' : 'PENDING'
+    const isPaid = paymentStatus === 'PAID';
+
+    return (
+      <tr key={bill.id || index} className="table-row">
+        <td className="px-6 py-4 font-mono text-sm text-brand-400 font-medium">{index + 1}</td>
+        <td className="px-6 py-4 text-dark-muted font-medium">{formattedDate}</td>
+        <td className="px-6 py-4 text-white font-semibold">{buyerName}</td>
+        <td className="px-6 py-4 text-right text-dark-muted">₹{subtotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td className="px-6 py-4 text-right text-dark-muted">₹{gstValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td className="px-6 py-4 text-right text-white font-bold">₹{totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td className="px-6 py-4 text-right text-emerald-400 font-medium">₹{paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td className="px-6 py-4 text-right text-amber-400 font-medium">₹{remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        
+        {/* Interactive Toggle Switch Cell matching your Red/Green styling */}
+        <td className="px-6 py-4 text-center">
+          <button
+            type="button"
+            onClick={() => handleTogglePaymentStatus(bill)}
+            className={`relative inline-flex h-7 w-20 items-center rounded-full transition-colors focus:outline-none shadow-inner ${
+              isPaid ? 'bg-emerald-600' : 'bg-red-600'
+            }`}
+            title={`Click to mark as ${isPaid ? 'Pending' : 'Paid'}`}
+          >
+            <span className={`absolute text-[10px] font-bold uppercase tracking-wider text-white ${isPaid ? 'left-4' : 'right-2'}`}>
+              {isPaid ? 'paid' : 'unpaid'}
+            </span>
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform shadow-md ${
+                isPaid ? 'translate-x-14' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </td>
+
+        <td className="px-6 py-4 text-center">
+          <button onClick={() => setSelectedBill(bill)} className="text-accent-400 hover:text-accent-300 text-sm font-medium">
+            View
+          </button>
+        </td>
+      </tr>
+    )
+  })}
+  {salesBills.length === 0 && (
+    <tr><td colSpan="10" className="text-center py-12 text-dark-muted">No bills created yet</td></tr>
+  )}
+</tbody>
+                </table>
+              </div>
       </div>
-      
+
       {/* Create Bill Modal */}
       {showCreateBill && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-2xl max-h-[92vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between pb-4 mb-6 border-b border-dark-border">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400"><Receipt size={20} /></div>
-                Bill to Retailer Network
-              </h3>
-              <button onClick={() => setShowCreateBill(false)} className="text-dark-muted hover:text-white text-sm font-semibold">✕</button>
-            </div>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-card border border-dark-border rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+              <Receipt size={20} className="text-brand-500" />
+              Create New Bill
+            </h3>
 
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Select Retailer *</label>
-                <select value={billForm.buyerId} onChange={(e) => setBillForm(f => ({ ...f, buyerId: e.target.value }))} className="input-field text-sm font-medium">
-                  <option value="">-- Choose Retailer Account --</option>
-                  {retailers.map(r => <option key={r.id} value={r.id}>{r.name} ({r.username || 'Retailer'})</option>)}
+                <label className="block text-sm text-dark-muted mb-2">Select Super Store *</label>
+                <select
+                  value={billForm.buyerId}
+                  onChange={(e) => setBillForm(f => ({ ...f, buyerId: e.target.value }))}
+                  className="input-field"
+                >
+                  <option value="">-- Select Retailer --</option>
+                  {ssUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
 
-              <div className="p-4 rounded-2xl bg-dark-bg/60 border border-dark-border space-y-3">
-                <div className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2"><ShoppingCart size={16} className="text-emerald-500" />Add Inventory Items</div>
-                <div className="flex gap-3 items-center">
-                  <select value={newItem.productId} onChange={(e) => setNewItem(i => ({ ...i, productId: parseInt(e.target.value, 10) }))} className="input-field flex-1 text-sm">
-                    {data.products.map(p => <option key={p.id} value={p.id}>{p.name} — ₹{p.salePrice || p.ss_price} / {p.unit || 'Unit'}</option>)}
+              {/* Add Items */}
+              <div className="p-4 rounded-xl bg-dark-bg border border-dark-border">
+                <div className="text-sm font-medium text-white mb-3 flex items-center gap-2">
+                  <ShoppingCart size={16} className="text-brand-500" />
+                  Add Items
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    value={newItem.productId}
+                    onChange={(e) => setNewItem(i => ({ ...i, productId: parseInt(e.target.value, 10) }))}
+                    className="input-field flex-1"
+                  >
+                    {data.products.map(p => <option key={p.id} value={p.id}>{p.name} - ₹{p.ss_price || p.salePrice}/{p.unit}</option>)}
                   </select>
-                  <input type="number" value={newItem.quantity} onChange={(e) => setNewItem(i => ({ ...i, quantity: e.target.value }))} className="input-field w-24 text-sm text-center" min="1" placeholder="Qty" />
-                  <button onClick={addItem} className="btn-primary px-5 py-2.5 text-sm font-semibold bg-emerald-600 hover:bg-emerald-500">Add</button>
+                  <input
+                    type="number"
+                    value={newItem.quantity}
+                    onChange={(e) => setNewItem(i => ({ ...i, quantity: e.target.value }))}
+                    className="input-field w-24"
+                    min="1"
+                    placeholder="Qty"
+                  />
+                  <button onClick={addItem} className="btn-primary px-4">Add</button>
                 </div>
               </div>
 
+              {/* Items Table */}
               {billForm.items.length > 0 && (
-                <div className="rounded-2xl border border-dark-border overflow-hidden bg-dark-bg/40">
+                <div className="rounded-xl border border-dark-border overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-dark-bg text-dark-muted text-[11px] uppercase font-bold tracking-wider border-b border-dark-border">
-                        <th className="text-left px-4 py-3">Product Name</th>
-                        <th className="text-right px-4 py-3">Qty</th>
-                        <th className="text-right px-4 py-3">Rate</th>
-                        <th className="text-right px-4 py-3">Amount</th>
-                        <th className="px-4 py-3 text-center">Action</th>
+                      <tr className="bg-dark-bg/50">
+                        <th className="text-left px-4 py-3 text-dark-muted text-xs uppercase tracking-wide">Product</th>
+                        <th className="text-right px-4 py-3 text-dark-muted text-xs uppercase tracking-wide">Qty</th>
+                        <th className="text-right px-4 py-3 text-dark-muted text-xs uppercase tracking-wide">Rate</th>
+                        <th className="text-right px-4 py-3 text-dark-muted text-xs uppercase tracking-wide">Amount</th>
+                        <th className="px-4 py-3"></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-dark-border/50 text-slate-200">
+                    <tbody>
                       {billForm.items.map(item => (
-                        <tr key={item.productId} className="hover:bg-white/[0.01]">
-                          <td className="px-4 py-3 font-semibold text-white">{item.productName}</td>
-                          <td className="px-4 py-3 text-right text-dark-muted font-medium">{item.quantity} {item.unit}</td>
-                          <td className="px-4 py-3 text-right text-dark-muted">₹{Number(item.rate || 0).toFixed(2)}</td>
-                          <td className="px-4 py-3 text-right text-white font-bold">₹{(item.quantity * item.rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <tr key={item.productId} className="border-t border-dark-border">
+                          <td className="px-4 py-3 text-white">{item.productName}</td>
+                          <td className="px-4 py-3 text-right text-dark-muted">{item.quantity}</td>
+                          <td className="px-4 py-3 text-right text-dark-muted">₹{item.rate}</td>
+                          <td className="px-4 py-3 text-right text-white font-medium">₹{(item.quantity * item.rate).toLocaleString()}</td>
                           <td className="px-4 py-3 text-center">
-                            <button onClick={() => removeItem(item.productId)} className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/15 transition"><Trash2 size={16} /></button>
+                            <button onClick={() => removeItem(item.productId)} className="text-red-400 hover:text-red-300">
+                              <Trash2 size={16} />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -243,46 +354,64 @@ export default function DistributorBilling() {
                 </div>
               )}
 
-              <div className="p-5 rounded-2xl bg-dark-bg/60 border border-dark-border space-y-3">
-                <div className="flex justify-between text-sm text-dark-muted"><span className="font-medium">Subtotal</span><span className="text-white font-semibold">₹{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                <div className="flex justify-between text-sm text-dark-muted"><span className="font-medium">GST (18% on Subtotal)</span><span className="text-white font-semibold">₹{gst.toFixed(2)}</span></div>
-                <div className="flex justify-between pt-3 border-t border-dark-border text-base font-bold"><span className="text-white">Grand Total</span><span className="text-emerald-400 text-xl font-black">₹{grandTotal.toFixed(2)}</span></div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-dark-muted mb-1.5">Payment Mode</label>
-                    <select value={billForm.paymentMethod} onChange={(e) => setBillForm(f => ({ ...f, paymentMethod: e.target.value }))} className="input-field text-sm">
+              {/* Totals with Visible GST Calculation */}
+              <div className="p-4 rounded-xl bg-dark-bg border border-dark-border space-y-2.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-dark-muted">Subtotal</span>
+                  <span className="text-white font-medium">₹{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-dark-muted">GST (18% on Subtotal)</span>
+                  <span className="text-brand-300 font-medium">₹{gst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-dark-muted">Discount</span>
+                  <input 
+                    type="number" 
+                    value={billForm.discount} 
+                    onChange={(e) => setBillForm(f => ({ ...f, discount: parseFloat(e.target.value) || 0 }))} 
+                    className="w-28 bg-dark-card border border-dark-border rounded px-2 py-1 text-right text-white text-sm" 
+                  />
+                </div>
+                <div className="flex justify-between pt-2.5 border-t border-dark-border font-semibold">
+                  <span className="text-white text-base">Grand Total</span>
+                  <span className="text-brand-400 text-lg">₹{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-dark-muted">Payment Method</label>
+                    <select value={billForm.paymentMethod} onChange={(e) => setBillForm(f => ({ ...f, paymentMethod: e.target.value }))} className="input-field mt-1 text-sm">
                       <option>Cash</option>
                       <option>UPI</option>
                       <option>Bank Transfer</option>
                       <option>Credit</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-dark-muted mb-1.5">Amount Paid (₹)</label>
-                    <input type="number" value={billForm.paidAmount} onChange={(e) => setBillForm(f => ({ ...f, paidAmount: e.target.value }))} className="input-field text-sm" placeholder="0.00" />
+                  <div className="flex-1">
+                    <label className="text-xs text-dark-muted">Paid Amount</label>
+                    <input type="number" value={billForm.paidAmount} onChange={(e) => setBillForm(f => ({ ...f, paidAmount: e.target.value }))} className="input-field mt-1 text-sm" placeholder="0" />
                   </div>
                 </div>
-                {due > 0 && <div className="text-xs font-bold text-amber-400 pt-1">Balance Due to Collect: ₹{due.toFixed(2)}</div>}
+                {due > 0 && <div className="text-sm text-amber-400 pt-1">Due: ₹{due.toFixed(2)}</div>}
               </div>
             </div>
 
-            <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
-              <button onClick={() => setShowCreateBill(false)} className="flex-1 btn-secondary py-3 font-semibold">Cancel</button>
-              <button onClick={handleCreateBill} disabled={!billForm.buyerId || billForm.items.length === 0} className="flex-1 btn-primary py-3 font-bold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50">Generate & Issue Bill</button>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowCreateBill(false)} className="flex-1 btn-secondary">Cancel</button>
+              <button onClick={handleCreateBill} disabled={!billForm.buyerId || billForm.items.length === 0} className="flex-1 btn-primary disabled:opacity-50">Create Bill</button>
             </div>
           </div>
         </div>
       )}
-      
-      {/* Professional A4 Billing Receipt Modal */}
+
+      {/* Render modular Billing Receipt A4 Modal */}
       {selectedBill && (
-        <BillingReceipt 
-          selectedBill={selectedBill} 
-          currentBillItems={currentBillItems} 
-          getUserById={getUserById} 
-          getProductById={getProductById} 
-          onClose={() => setSelectedBill(null)} 
+        <BillingReceipt
+          selectedBill={selectedBill}
+          currentBillItems={currentBillItems}
+          getUserById={getUserById}
+          getProductById={getProductById}
+          onClose={() => setSelectedBill(null)}
         />
       )}
     </div>

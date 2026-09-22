@@ -93,6 +93,7 @@ export const api = {
   getBill: (id) => request(`/bills/${id}`),
   createBill: (billData, items) => request('/bills', { method: 'POST', body: JSON.stringify({ ...billData, items }) }),
   addPayment: (billId, amount, method) => request(`/bills/${billId}/payments`, { method: 'POST', body: JSON.stringify({ amount, method }) }),
+  updatePaymentStatus: (billId, status, method) => request(`/bills/${billId}/payment-status`, { method: 'PATCH', body: JSON.stringify({ status, method }) }),
 
   // Customers
   getCustomers: () => request('/bills/customers'),

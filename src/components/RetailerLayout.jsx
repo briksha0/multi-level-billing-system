@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { LayoutDashboard, Users, Warehouse, FileText, BarChart3, LogOut, UserCircle, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, Warehouse, LogOut, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 
 export default function RetailerLayout() {
@@ -11,10 +11,7 @@ export default function RetailerLayout() {
 
   const navItems = [
     { path: '/retailer/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/retailer/customers', label: 'Customers', icon: UserCircle },
     { path: '/retailer/stock', label: 'Stock', icon: Warehouse },
-    { path: '/retailer/billing', label: 'Billing', icon: FileText },
-    { path: '/retailer/reports', label: 'Reports', icon: BarChart3 },
   ]
 
   const handleLogout = () => {

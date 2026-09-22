@@ -1,6 +1,7 @@
+// src/pages/ss/SSLayout.jsx
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { LayoutDashboard, Users, Warehouse, FileText, BarChart3, LogOut, Network, ChevronDown, Menu, X } from 'lucide-react'
+import { LayoutDashboard, Warehouse, FileText, BarChart3, LogOut, Network, ChevronDown, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
 export default function SSLayout() {
@@ -34,13 +35,13 @@ export default function SSLayout() {
         />
       )}
 
-      {/* Sidebar (Responsive Drawer on Mobile, Fixed on Desktop) */}
+      {/* Sidebar (Responsive Drawer on Mobile, Sticky Fixed on Desktop) */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-dark-card border-r border-dark-border flex flex-col transition-transform duration-300 ease-in-out
-        lg:translate-x-0 lg:static
+        lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="p-6 border-b border-dark-border flex items-center justify-between">
+        <div className="p-6 border-b border-dark-border flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500 to-accent-700 flex items-center justify-center text-white font-bold text-lg shadow-lg">
               S
@@ -83,7 +84,7 @@ export default function SSLayout() {
           })}
         </nav>
         
-        <div className="p-4 border-t border-dark-border">
+        <div className="p-4 border-t border-dark-border flex-shrink-0">
           <button onClick={handleLogout} className="sidebar-link w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors">
             <LogOut size={18} />
             <span>Logout</span>
@@ -92,7 +93,7 @@ export default function SSLayout() {
       </aside>
       
       {/* Main Content Wrapper */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         
         {/* Top Header */}
         <header className="h-16 bg-dark-card border-b border-dark-border flex items-center justify-between px-4 lg:px-8 z-30 shrink-0">
