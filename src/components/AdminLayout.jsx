@@ -50,7 +50,7 @@ export default function AdminLayout() {
               className="h-10 w-auto rounded-lg border border-dark-border bg-white p-1.5"
             />
             <div>
-              <div className="font-bold text-dark-text">Aquaura</div>
+              <div className="font-bold text-dark-text">Aquaura Essencials</div>
               <div className="text-xs text-dark-muted">Admin Panel</div>
             </div>
           </div>
