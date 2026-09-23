@@ -78,14 +78,22 @@ export default function AdminStock() {
     }
   }
 
-  // Add item to multi-product damage list
+  // Add item to multi-product damage list with restriction against going negative
   const addDamageItemToList = () => {
     const product = productsList.find(p => Number(p.id) === Number(newDamageItem.productId))
     const qty = parseInt(newDamageItem.quantity, 10)
     if (!product || isNaN(qty) || qty <= 0) return
 
-    const exists = damageItems.find(i => Number(i.productId) === Number(newDamageItem.productId))
-    if (exists) {
+    const availableStock = userStockMap[product.id] || 0
+    const existingInList = damageItems.find(i => Number(i.productId) === Number(newDamageItem.productId))
+    const alreadyAddedQty = existingInList ? existingInList.quantity : 0
+
+    if (qty + alreadyAddedQty > availableStock) {
+      alert(`Cannot report ${qty + alreadyAddedQty} damaged units. Only ${availableStock} units are currently available in stock for ${product.name}.`)
+      return
+    }
+
+    if (existingInList) {
       setDamageItems(damageItems.map(i => Number(i.productId) === Number(newDamageItem.productId) ? { ...i, quantity: i.quantity + qty } : i))
     } else {
       setDamageItems([...damageItems, {
@@ -101,12 +109,17 @@ export default function AdminStock() {
     setDamageItems(damageItems.filter(i => Number(i.productId) !== Number(productId)))
   }
 
-  // Submit all damaged items to the backend adjust route sequentially or in batch
+  // Submit all damaged items to backend
   const handleBatchDamageSubmit = async () => {
     if (damageItems.length === 0) return
 
     try {
       for (const item of damageItems) {
+        const availableStock = userStockMap[item.productId] || 0
+        if (item.quantity > availableStock) {
+          throw new Error(`Insufficient stock for ${item.productName}. Available: ${availableStock}, Requested to remove: ${item.quantity}`)
+        }
+
         const response = await fetch(`/api/stock/adjust`, {
           method: 'POST',
           headers: {
