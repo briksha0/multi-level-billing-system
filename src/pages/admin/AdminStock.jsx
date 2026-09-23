@@ -2,14 +2,16 @@
 import { useState, useEffect } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { Warehouse, Plus, Package, AlertTriangle, TrendingDown, TrendingUp } from 'lucide-react'
+import { Warehouse, Plus, Package, AlertTriangle, TrendingDown, TrendingUp, ShieldAlert } from 'lucide-react'
 
 export default function AdminStock() {
   const { data, addOpeningStock, refresh } = useData()
   const { user } = useAuth()
   const [selectedUser, setSelectedUser] = useState(user?.id || 1)
   const [showAddStock, setShowAddStock] = useState(false)
+  const [showDamageStock, setShowDamageStock] = useState(false)
   const [stockForm, setStockForm] = useState({ productId: 1, quantity: '' })
+  const [damageForm, setDamageForm] = useState({ productId: 1, quantity: '', reason: 'Damaged Goods' })
   const [userStockMap, setUserStockMap] = useState({})
 
   const usersList = Array.isArray(data?.users) ? data.users : []
@@ -71,6 +73,53 @@ export default function AdminStock() {
     }
   }
 
+  // Handle reporting damaged goods / deducting inventory stock
+  const handleDamageStock = async () => {
+    const qty = parseInt(damageForm.quantity, 10)
+    if (isNaN(qty) || qty <= 0) return
+
+    try {
+      // Send a negative quantity change to deduct damaged stock
+      const response = await fetch(`/api/stock/adjust`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
+        },
+        body: JSON.stringify({
+          userId: selectedUser,
+          productId: damageForm.productId,
+          quantityChange: -qty // Negative value deducts stock
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update damaged stock')
+      }
+
+      if (refresh) await refresh()
+
+      // Reload stock map
+      const stockRes = await fetch(`/api/stock?userId=${selectedUser}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('mlb_token')}` }
+      })
+      const stockData = await stockRes.json()
+      const map = {}
+      if (Array.isArray(stockData)) {
+        stockData.forEach(s => {
+          map[s.product_id || s.productId] = Number(s.quantity) || 0
+        })
+      }
+      setUserStockMap(map)
+
+      setDamageForm({ productId: productsList[0]?.id || 1, quantity: '', reason: 'Damaged Goods' })
+      setShowDamageStock(false)
+    } catch (err) {
+      console.error('Error reporting damage:', err)
+      alert(err.message || 'Failed to adjust stock for damaged goods')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -78,7 +127,7 @@ export default function AdminStock() {
           <h2 className="text-2xl font-bold text-white">Stock Management</h2>
           <p className="text-dark-muted text-sm">View and manage available inventory across all levels</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <select
             value={selectedUser}
             onChange={(e) => setSelectedUser(parseInt(e.target.value, 10))}
@@ -89,6 +138,10 @@ export default function AdminStock() {
               <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
             ))}
           </select>
+          <button onClick={() => setShowDamageStock(true)} className="btn-secondary flex items-center gap-2 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
+            <ShieldAlert size={18} />
+            Report Damage
+          </button>
           <button onClick={() => setShowAddStock(true)} className="btn-primary flex items-center gap-2">
             <Plus size={18} />
             Add Stock
@@ -183,6 +236,7 @@ export default function AdminStock() {
         </div>
       </div>
       
+      {/* Add Stock Modal */}
       {showAddStock && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
@@ -216,6 +270,62 @@ export default function AdminStock() {
             <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
               <button onClick={() => setShowAddStock(false)} className="flex-1 btn-secondary py-2.5 text-sm font-semibold">Cancel</button>
               <button onClick={handleAddStock} className="flex-1 btn-primary py-2.5 text-sm font-bold">Add Stock</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Damage / Deduct Stock Modal */}
+      {showDamageStock && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-3 mb-2">
+              <ShieldAlert className="text-amber-500" size={22} />
+              <h3 className="text-lg font-bold text-white">Report Damaged Stock</h3>
+            </div>
+            <p className="text-xs text-dark-muted mb-6">Deduct damaged or lost items from: <span className="text-white font-semibold">{currentUser?.name}</span></p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Product</label>
+                <select
+                  value={damageForm.productId}
+                  onChange={(e) => setDamageForm(f => ({ ...f, productId: parseInt(e.target.value, 10) }))}
+                  className="input-field text-sm font-medium"
+                >
+                  {productsList.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} (Available: {userStockMap[p.id] || 0})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Quantity Damaged</label>
+                <input
+                  type="number"
+                  value={damageForm.quantity}
+                  onChange={(e) => setDamageForm(f => ({ ...f, quantity: e.target.value }))}
+                  className="input-field text-sm font-medium"
+                  min="1"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Reason / Note</label>
+                <input
+                  type="text"
+                  value={damageForm.reason}
+                  onChange={(e) => setDamageForm(f => ({ ...f, reason: e.target.value }))}
+                  className="input-field text-sm font-medium"
+                  placeholder="e.g., Transit damage, expired"
+                />
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
+              <button onClick={() => setShowDamageStock(false)} className="flex-1 btn-secondary py-2.5 text-sm font-semibold">Cancel</button>
+              <button onClick={handleDamageStock} className="flex-1 btn-primary py-2.5 text-sm font-bold bg-amber-600 hover:bg-amber-500">Deduct Stock</button>
             </div>
           </div>
         </div>

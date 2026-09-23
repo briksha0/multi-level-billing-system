@@ -501,5 +501,39 @@ router.post('/transfer', async (req, res) => {
   }
 });
 
+// =====================================================
+// Adjust stock (Used for Admin reporting damaged goods)
+// =====================================================
+router.post('/adjust', async (req, res) => {
+  try {
+    // Optional: Ensure only admin or authorized users can adjust stock
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only admin can adjust inventory stock' });
+    }
+
+    const { userId, productId, quantityChange } = req.body;
+
+    if (!userId || !productId || quantityChange === undefined) {
+      return res.status(400).json({ error: 'Missing required fields: userId, productId, or quantityChange' });
+    }
+
+    // Insert or update stock safely using UPSERT
+    await db.query(
+      `
+      INSERT INTO public.stock (user_id, product_id, quantity)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, product_id)
+      DO UPDATE SET quantity = stock.quantity + $3
+      `,
+      [userId, productId, parseInt(quantityChange, 10)]
+    );
+
+    res.json({ message: 'Stock adjusted successfully' });
+  } catch (err) {
+    console.error('Error adjusting stock:', err);
+    res.status(500).json({ error: 'Failed to adjust stock' });
+  }
+});
+
 module.exports = router;
 
