@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { Warehouse, Plus, Package, AlertTriangle, TrendingDown, TrendingUp, ShieldAlert } from 'lucide-react'
+import { Warehouse, Plus, Package, AlertTriangle, TrendingDown, TrendingUp, ShieldAlert, Trash2, ShoppingCart } from 'lucide-react'
 
 export default function AdminStock() {
   const { data, addOpeningStock, refresh } = useData()
@@ -11,7 +11,12 @@ export default function AdminStock() {
   const [showAddStock, setShowAddStock] = useState(false)
   const [showDamageStock, setShowDamageStock] = useState(false)
   const [stockForm, setStockForm] = useState({ productId: 1, quantity: '' })
-  const [damageForm, setDamageForm] = useState({ productId: 1, quantity: '', reason: 'Damaged Goods' })
+  
+  // Multi-product damage form state
+  const [damageItems, setDamageItems] = useState([])
+  const [newDamageItem, setNewDamageItem] = useState({ productId: 1, quantity: 1 })
+  const [damageReason, setDamageReason] = useState('Damaged Goods')
+
   const [userStockMap, setUserStockMap] = useState({})
 
   const usersList = Array.isArray(data?.users) ? data.users : []
@@ -73,28 +78,51 @@ export default function AdminStock() {
     }
   }
 
-  // Handle reporting damaged goods / deducting inventory stock
-  const handleDamageStock = async () => {
-    const qty = parseInt(damageForm.quantity, 10)
-    if (isNaN(qty) || qty <= 0) return
+  // Add item to multi-product damage list
+  const addDamageItemToList = () => {
+    const product = productsList.find(p => Number(p.id) === Number(newDamageItem.productId))
+    const qty = parseInt(newDamageItem.quantity, 10)
+    if (!product || isNaN(qty) || qty <= 0) return
+
+    const exists = damageItems.find(i => Number(i.productId) === Number(newDamageItem.productId))
+    if (exists) {
+      setDamageItems(damageItems.map(i => Number(i.productId) === Number(newDamageItem.productId) ? { ...i, quantity: i.quantity + qty } : i))
+    } else {
+      setDamageItems([...damageItems, {
+        productId: product.id,
+        productName: product.name,
+        quantity: qty
+      }])
+    }
+    setNewDamageItem({ productId: productsList[0]?.id || 1, quantity: 1 })
+  }
+
+  const removeDamageItemFromList = (productId) => {
+    setDamageItems(damageItems.filter(i => Number(i.productId) !== Number(productId)))
+  }
+
+  // Submit all damaged items to the backend adjust route sequentially or in batch
+  const handleBatchDamageSubmit = async () => {
+    if (damageItems.length === 0) return
 
     try {
-      // Send a negative quantity change to deduct damaged stock
-      const response = await fetch(`/api/stock/adjust`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
-        },
-        body: JSON.stringify({
-          userId: selectedUser,
-          productId: damageForm.productId,
-          quantityChange: -qty // Negative value deducts stock
+      for (const item of damageItems) {
+        const response = await fetch(`/api/stock/adjust`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
+          },
+          body: JSON.stringify({
+            userId: selectedUser,
+            productId: item.productId,
+            quantityChange: -item.quantity // Negative value deducts stock
+          })
         })
-      })
 
-      if (!response.ok) {
-        throw new Error('Failed to update damaged stock')
+        if (!response.ok) {
+          throw new Error(`Failed to update stock for product ID ${item.productId}`)
+        }
       }
 
       if (refresh) await refresh()
@@ -112,10 +140,11 @@ export default function AdminStock() {
       }
       setUserStockMap(map)
 
-      setDamageForm({ productId: productsList[0]?.id || 1, quantity: '', reason: 'Damaged Goods' })
+      setDamageItems([])
+      setDamageReason('Damaged Goods')
       setShowDamageStock(false)
     } catch (err) {
-      console.error('Error reporting damage:', err)
+      console.error('Error reporting multiple damages:', err)
       alert(err.message || 'Failed to adjust stock for damaged goods')
     }
   }
@@ -275,57 +304,85 @@ export default function AdminStock() {
         </div>
       )}
 
-      {/* Report Damage / Deduct Stock Modal */}
+      {/* Report Multiple Damaged Goods Modal */}
       {showDamageStock && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="flex items-center gap-3 mb-2">
               <ShieldAlert className="text-amber-500" size={22} />
-              <h3 className="text-lg font-bold text-white">Report Damaged Stock</h3>
+              <h3 className="text-lg font-bold text-white">Report Multiple Damaged Products</h3>
             </div>
-            <p className="text-xs text-dark-muted mb-6">Deduct damaged or lost items from: <span className="text-white font-semibold">{currentUser?.name}</span></p>
+            <p className="text-xs text-dark-muted mb-6">Select and add multiple items to deduct from: <span className="text-white font-semibold">{currentUser?.name}</span></p>
             
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Product</label>
-                <select
-                  value={damageForm.productId}
-                  onChange={(e) => setDamageForm(f => ({ ...f, productId: parseInt(e.target.value, 10) }))}
-                  className="input-field text-sm font-medium"
-                >
-                  {productsList.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} (Available: {userStockMap[p.id] || 0})
-                    </option>
-                  ))}
-                </select>
+            <div className="space-y-5">
+              {/* Product Picker Box */}
+              <div className="p-4 rounded-2xl bg-dark-bg/60 border border-dark-border space-y-3">
+                <div className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2"><ShoppingCart size={16} className="text-amber-500" />Add Product to Damage List</div>
+                <div className="flex gap-3 items-center">
+                  <select
+                    value={newDamageItem.productId}
+                    onChange={(e) => setNewDamageItem(i => ({ ...i, productId: parseInt(e.target.value, 10) }))}
+                    className="input-field flex-1 text-sm"
+                  >
+                    {productsList.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (Available: {userStockMap[p.id] || 0})
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    value={newDamageItem.quantity}
+                    onChange={(e) => setNewDamageItem(i => ({ ...i, quantity: e.target.value }))}
+                    className="input-field w-24 text-sm text-center"
+                    min="1"
+                    placeholder="Qty"
+                  />
+                  <button onClick={addDamageItemToList} className="btn-primary px-5 py-2.5 text-sm font-semibold bg-amber-600 hover:bg-amber-500">Add</button>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Quantity Damaged</label>
-                <input
-                  type="number"
-                  value={damageForm.quantity}
-                  onChange={(e) => setDamageForm(f => ({ ...f, quantity: e.target.value }))}
-                  className="input-field text-sm font-medium"
-                  min="1"
-                  placeholder="0"
-                />
-              </div>
+
+              {/* Added Damage Items Table */}
+              {damageItems.length > 0 && (
+                <div className="rounded-2xl border border-dark-border overflow-hidden bg-dark-bg/40">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-dark-bg text-dark-muted text-[11px] uppercase font-bold tracking-wider border-b border-dark-border">
+                        <th className="text-left px-4 py-3">Product Name</th>
+                        <th className="text-right px-4 py-3">Damaged Qty</th>
+                        <th className="px-4 py-3 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-dark-border/50 text-slate-200">
+                      {damageItems.map(item => (
+                        <tr key={item.productId} className="hover:bg-white/[0.01]">
+                          <td className="px-4 py-3 font-semibold text-white">{item.productName}</td>
+                          <td className="px-4 py-3 text-right text-amber-400 font-bold">{item.quantity}</td>
+                          <td className="px-4 py-3 text-center">
+                            <button onClick={() => removeDamageItemFromList(item.productId)} className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/15 transition"><Trash2 size={16} /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Reason / Note</label>
                 <input
                   type="text"
-                  value={damageForm.reason}
-                  onChange={(e) => setDamageForm(f => ({ ...f, reason: e.target.value }))}
+                  value={damageReason}
+                  onChange={(e) => setDamageReason(e.target.value)}
                   className="input-field text-sm font-medium"
-                  placeholder="e.g., Transit damage, expired"
+                  placeholder="e.g., Transit damage, expired batch"
                 />
               </div>
             </div>
             
             <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
-              <button onClick={() => setShowDamageStock(false)} className="flex-1 btn-secondary py-2.5 text-sm font-semibold">Cancel</button>
-              <button onClick={handleDamageStock} className="flex-1 btn-primary py-2.5 text-sm font-bold bg-amber-600 hover:bg-amber-500">Deduct Stock</button>
+              <button onClick={() => setShowDamageStock(false)} className="flex-1 btn-secondary py-3 text-sm font-semibold">Cancel</button>
+              <button onClick={handleBatchDamageSubmit} disabled={damageItems.length === 0} className="flex-1 btn-primary py-3 text-sm font-bold bg-amber-600 hover:bg-amber-500 disabled:opacity-50">Submit Damage Report</button>
             </div>
           </div>
         </div>
