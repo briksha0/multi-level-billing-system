@@ -7,6 +7,37 @@ const { authenticateToken, requireRole, canAccessUser } = require('../middleware
 const router = express.Router();
 router.use(authenticateToken);
 
+
+// PUT /api/users/:id/password - Change user password by Admin
+router.put('/:id/password', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only admin can change user passwords' });
+    }
+
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    await db.query(
+      `UPDATE public.users SET password = $1 WHERE id = $2`,
+      [hashedPassword, id]
+    );
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('Error updating password:', err);
+    res.status(500).json({ error: 'Failed to update password' });
+  }
+});
+
+
 // Get visible users based on hierarchy
 router.get('/', async (req, res) => {
   try {

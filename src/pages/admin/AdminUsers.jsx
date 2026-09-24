@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { Plus, Search, UserPlus, Building2, Users, Store, Shield, Trash2 } from 'lucide-react'
+import { Plus, Search, UserPlus, Building2, Users, Store, Shield, Trash2, Key } from 'lucide-react'
 
 export default function AdminUsers() {
   const { data, addUser, deleteUser } = useData()
@@ -13,6 +13,11 @@ export default function AdminUsers() {
   const [newUser, setNewUser] = useState({ username: '', name: '', password: '', role: 'SS', parentId: 1 })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // State for the Change Password modal
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordTargetUser, setPasswordTargetUser] = useState(null)
+  const [newPassword, setNewPassword] = useState('')
 
   const roleConfig = {
     SS: { icon: Building2, color: 'text-accent-500', bg: 'bg-accent-500/15', label: 'Super Stores' },
@@ -28,6 +33,44 @@ export default function AdminUsers() {
     if (search && !u.name.toLowerCase().includes(search.toLowerCase()) && !u.username.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
+
+  // Open the password change modal for a selected user
+  const handleOpenPasswordModal = (targetUser) => {
+    setPasswordTargetUser(targetUser)
+    setNewPassword('')
+    setShowPasswordModal(true)
+  }
+
+  // Submit the updated password to the backend
+  const handleChangePassword = async () => {
+    if (!passwordTargetUser || !newPassword) {
+      alert('Please enter a new password.')
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/users/${passwordTargetUser.id}/password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
+        },
+        body: JSON.stringify({ password: newPassword })
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Failed to update user password')
+      }
+
+      alert(`Password updated successfully for ${passwordTargetUser.name}`)
+      setShowPasswordModal(false)
+      setPasswordTargetUser(null)
+      setNewPassword('')
+    } catch (err) {
+      alert(err.message || 'Failed to update password')
+    }
+  }
 
   const handleAddUser = async () => {
     if (!newUser.username || !newUser.name || !newUser.password) {
@@ -159,10 +202,17 @@ export default function AdminUsers() {
                       {uStatus}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-4 text-right space-x-1">
+                    <button
+                      onClick={() => handleOpenPasswordModal(u)}
+                      className="p-2 rounded-lg hover:bg-amber-500/10 text-dark-muted hover:text-amber-400 transition-colors inline-flex items-center justify-center"
+                      title="Change Password"
+                    >
+                      <Key size={18} />
+                    </button>
                     <button
                       onClick={() => handleDeleteUser(u)}
-                      className="p-2 rounded-lg hover:bg-red-500/10 text-dark-muted hover:text-red-400 transition-colors"
+                      className="p-2 rounded-lg hover:bg-red-500/10 text-dark-muted hover:text-red-400 transition-colors inline-flex items-center justify-center"
                       title="Delete user"
                     >
                       <Trash2 size={18} />
@@ -261,6 +311,51 @@ export default function AdminUsers() {
               <button onClick={() => setShowModal(false)} className="flex-1 btn-secondary py-2.5 text-sm font-semibold">Cancel</button>
               <button onClick={handleAddUser} disabled={loading} className="flex-1 btn-primary py-2.5 text-sm font-bold disabled:opacity-50">
                 {loading ? 'Creating...' : 'Add User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {showPasswordModal && passwordTargetUser && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-dark-border">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-400">
+                <Key size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Change User Password</h3>
+                <p className="text-xs text-dark-muted">User: <span className="text-white font-semibold">{passwordTargetUser.name}</span></p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">New Password *</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="input-field text-sm font-medium"
+                  placeholder="Enter secure new password"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
+              <button 
+                onClick={() => setShowPasswordModal(false)} 
+                className="flex-1 btn-secondary py-3 text-sm font-semibold"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleChangePassword} 
+                className="flex-1 btn-primary py-3 text-sm font-bold bg-amber-600 hover:bg-amber-500"
+              >
+                Update Password
               </button>
             </div>
           </div>
