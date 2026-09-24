@@ -18,7 +18,6 @@ async function request(endpoint, options = {}) {
     ...options.headers,
   };
 
-
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -29,16 +28,23 @@ async function request(endpoint, options = {}) {
       headers,
     });
 
-    // Try to parse JSON
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await response.json()
+      : await response.text();
 
     // Handle HTTP errors
     if (!response.ok) {
       throw new Error(
         data?.error ||
         data?.message ||
+        (typeof data === 'string' && data.trim() ? `Server returned a non-JSON response (${response.status})` : '') ||
         `Request failed with status ${response.status}`
       );
+    }
+
+    if (typeof data === 'string') {
+      throw new Error(`Server returned a non-JSON response (${response.status})`);
     }
 
     return data;
@@ -92,6 +98,8 @@ export const api = {
   getBills: (type = 'sales') => request(`/bills?type=${type}`),
   getBill: (id) => request(`/bills/${id}`),
   createBill: (billData, items) => request('/bills', { method: 'POST', body: JSON.stringify({ ...billData, items }) }),
+  updateBill: (id, billData) => request(`/bills/${id}`, { method: 'PUT', body: JSON.stringify(billData) }),
+  deleteBill: (id) => request(`/bills/${id}`, { method: 'DELETE' }),
   addPayment: (billId, amount, method) => request(`/bills/${billId}/payments`, { method: 'POST', body: JSON.stringify({ amount, method }) }),
   updatePaymentStatus: (billId, status, method) => request(`/bills/${billId}/payment-status`, { method: 'PATCH', body: JSON.stringify({ status, method }) }),
 
@@ -112,5 +120,4 @@ export const api = {
   setToken,
   getToken,
   clearToken: () => setToken(null),
-
 };

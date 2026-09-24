@@ -150,6 +150,9 @@ router.post('/', requireRole('ADMIN', 'SS', 'DISTRIBUTOR'), async (req, res) => 
 
 // Delete user
 router.delete('/:userId', canAccessUser, async (req, res) => {
+  const client = await db.connect();
+  let transactionStarted = false;
+
   try {
     const targetId = Number(req.params.userId);
     if (!targetId) {
@@ -160,31 +163,36 @@ router.delete('/:userId', canAccessUser, async (req, res) => {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
 
-    const targetResult = await db.query('SELECT id, role, parent_id FROM users WHERE id = $1', [targetId]);
+    const targetResult = await client.query('SELECT id, role, parent_id FROM users WHERE id = $1', [targetId]);
     const targetUser = targetResult.rows[0];
 
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    await db.query('BEGIN');
+    await client.query('BEGIN');
+    transactionStarted = true;
 
-    await db.query('UPDATE users SET parent_id = NULL WHERE parent_id = $1', [targetId]);
-    await db.query('DELETE FROM stock WHERE user_id = $1', [targetId]);
-    await db.query('DELETE FROM notifications WHERE user_id = $1', [targetId]);
-    await db.query('DELETE FROM audit_logs WHERE user_id = $1', [targetId]);
-    await db.query('UPDATE bills SET seller_id = NULL WHERE seller_id = $1', [targetId]);
-    await db.query('UPDATE bills SET buyer_id = NULL WHERE buyer_id = $1', [targetId]);
-    await db.query('UPDATE bills SET created_by = NULL WHERE created_by = $1', [targetId]);
-    await db.query('UPDATE customers SET retailer_id = NULL WHERE retailer_id = $1', [targetId]);
-    await db.query('DELETE FROM users WHERE id = $1', [targetId]);
+    await client.query('UPDATE users SET parent_id = NULL WHERE parent_id = $1', [targetId]);
+    await client.query('DELETE FROM stock WHERE user_id = $1', [targetId]);
+    await client.query('DELETE FROM stock_transactions WHERE from_id = $1 OR to_id = $1', [targetId]);
+    await client.query('DELETE FROM notifications WHERE user_id = $1', [targetId]);
+    await client.query('DELETE FROM audit_logs WHERE user_id = $1', [targetId]);
+    await client.query('UPDATE bills SET seller_id = NULL WHERE seller_id = $1', [targetId]);
+    await client.query('UPDATE bills SET buyer_id = NULL WHERE buyer_id = $1', [targetId]);
+    await client.query('UPDATE bills SET created_by = NULL WHERE created_by = $1', [targetId]);
+    await client.query('UPDATE customers SET retailer_id = NULL WHERE retailer_id = $1', [targetId]);
+    await client.query('DELETE FROM users WHERE id = $1', [targetId]);
 
-    await db.query('COMMIT');
+    await client.query('COMMIT');
+    transactionStarted = false;
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (err) {
-    await db.query('ROLLBACK').catch(() => { });
+    if (transactionStarted) await client.query('ROLLBACK').catch(() => { });
     console.error('Error deleting user:', err);
     res.status(500).json({ error: 'Failed to delete user' });
+  } finally {
+    client.release();
   }
 });
 

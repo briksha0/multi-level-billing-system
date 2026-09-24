@@ -478,4 +478,245 @@ router.post('/customers', async (req, res) => {
   }
 });
 
+// PUT /api/bills/:id - Update bill and stock
+router.put('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { discount = 0, paidAmount = 0, paymentMethod = 'Cash', items } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'At least one item is required' });
+  }
+
+  const normalizedItems = items.map(item => ({
+    productId: Number(item.productId),
+    quantity: Number(item.quantity),
+    rate: Number(item.rate || 0),
+    gst: item.gst === undefined ? undefined : Number(item.gst)
+  })).filter(item => item.quantity > 0);
+
+  if (normalizedItems.length === 0 || normalizedItems.some(item => !Number.isInteger(item.productId) || !Number.isInteger(item.quantity))) {
+    return res.status(400).json({ error: 'At least one item must have a valid positive quantity' });
+  }
+
+  const client = await db.connect();
+  let transactionStarted = false;
+  try {
+    await client.query('BEGIN');
+    transactionStarted = true;
+
+    const billResult = await client.query(
+      'SELECT * FROM public.bills WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    const bill = billResult.rows[0];
+
+    if (!bill) {
+      const error = new Error('Bill not found');
+      error.status = 404;
+      throw error;
+    }
+    if (bill.seller_id !== req.user.id && req.user.role !== 'ADMIN') {
+      const error = new Error('Only the bill seller can update this bill');
+      error.status = 403;
+      throw error;
+    }
+
+    const oldItemsResult = await client.query(
+      'SELECT product_id, quantity FROM public.bill_items WHERE bill_id = $1',
+      [id]
+    );
+
+    const oldQuantities = new Map();
+    for (const item of oldItemsResult.rows) {
+      oldQuantities.set(Number(item.product_id), Number(item.quantity));
+    }
+
+    const newQuantities = new Map();
+    for (const item of normalizedItems) {
+      newQuantities.set(item.productId, (newQuantities.get(item.productId) || 0) + item.quantity);
+    }
+
+    const adjustStock = async (userId, productId, delta, label) => {
+      if (!userId || delta === 0) return;
+
+      const stockResult = await client.query(
+        'SELECT quantity FROM public.stock WHERE user_id = $1 AND product_id = $2 FOR UPDATE',
+        [userId, productId]
+      );
+      const currentQuantity = stockResult.rows[0] ? Number(stockResult.rows[0].quantity) : 0;
+
+      if (delta < 0 && currentQuantity < Math.abs(delta)) {
+        const productResult = await client.query(
+          'SELECT name FROM public.products WHERE id = $1',
+          [productId]
+        );
+        const productName = productResult.rows[0]?.name || 'product';
+        const error = new Error(`Insufficient ${label} stock for ${productName}`);
+        error.status = 400;
+        throw error;
+      }
+
+      if (stockResult.rows[0]) {
+        await client.query(
+          'UPDATE public.stock SET quantity = quantity + $1 WHERE user_id = $2 AND product_id = $3',
+          [delta, userId, productId]
+        );
+      } else if (delta > 0) {
+        await client.query(
+          'INSERT INTO public.stock (user_id, product_id, quantity) VALUES ($1, $2, $3)',
+          [userId, productId, delta]
+        );
+      }
+    };
+
+    const productIds = new Set([...oldQuantities.keys(), ...newQuantities.keys()]);
+    for (const productId of productIds) {
+      const delta = (newQuantities.get(productId) || 0) - (oldQuantities.get(productId) || 0);
+      await adjustStock(bill.seller_id, productId, -delta, 'seller');
+
+      if (bill.buyer_id && bill.bill_type !== 'RETAIL_TO_CUSTOMER') {
+        await adjustStock(bill.buyer_id, productId, delta, 'buyer');
+      }
+    }
+
+    const totals = await computeBillTotals(
+      bill.bill_type,
+      normalizedItems,
+      discount,
+      paidAmount
+    );
+
+    await client.query('DELETE FROM public.bill_items WHERE bill_id = $1', [id]);
+    for (const item of totals.billItems) {
+      await client.query(
+        'INSERT INTO public.bill_items (bill_id, product_id, quantity, rate, gst, amount) VALUES ($1, $2, $3, $4, $5, $6)',
+        [id, item.productId, item.quantity, item.rate, item.gstRate, item.amount]
+      );
+    }
+
+    await client.query('DELETE FROM public.stock_transactions WHERE bill_id = $1', [id]);
+    if (bill.buyer_id && bill.bill_type !== 'RETAIL_TO_CUSTOMER') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      for (const item of totals.billItems) {
+        await client.query(
+          'INSERT INTO public.stock_transactions (date, from_id, to_id, product_id, quantity, type, bill_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [todayStr, bill.seller_id, bill.buyer_id, item.productId, item.quantity, 'OUT', id]
+        );
+      }
+    }
+
+    await client.query(
+      `UPDATE public.bills
+       SET subtotal = $1, discount = $2, gst = $3, grand_total = $4,
+           paid_amount = $5, due_amount = $6, payment_status = $7, payment_method = $8
+       WHERE id = $9`,
+      [
+        totals.subtotal,
+        totals.discountAmount,
+        totals.totalGst,
+        totals.grandTotal,
+        totals.finalPaid,
+        totals.dueAmount,
+        totals.paymentStatus,
+        paymentMethod,
+        id
+      ]
+    );
+
+    await client.query('DELETE FROM public.payments WHERE bill_id = $1', [id]);
+    if (totals.finalPaid > 0) {
+      await client.query(
+        'INSERT INTO public.payments (bill_id, amount, method, date) VALUES ($1, $2, $3, CURRENT_DATE)',
+        [id, totals.finalPaid, paymentMethod]
+      );
+    }
+
+    await client.query('COMMIT');
+    transactionStarted = false;
+    res.json({ message: 'Bill and stock updated successfully' });
+  } catch (err) {
+    if (transactionStarted) await client.query('ROLLBACK');
+    console.error('Bill update error:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Failed to update bill and stock' });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE /api/bills/:id - Delete a bill
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  const client = await db.connect();
+  let transactionStarted = false;
+
+  try {
+    await client.query('BEGIN');
+    transactionStarted = true;
+
+    const billResult = await client.query(
+      'SELECT seller_id, buyer_id, bill_type FROM public.bills WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    const bill = billResult.rows[0];
+
+    if (!bill) {
+      const error = new Error('Bill not found');
+      error.status = 404;
+      throw error;
+    }
+    if (bill.seller_id !== req.user.id && req.user.role !== 'ADMIN') {
+      const error = new Error('Only the bill seller can delete this bill');
+      error.status = 403;
+      throw error;
+    }
+
+    const itemsResult = await client.query(
+      'SELECT product_id, quantity FROM public.bill_items WHERE bill_id = $1',
+      [id]
+    );
+
+    for (const item of itemsResult.rows) {
+      await client.query(
+        `INSERT INTO public.stock (user_id, product_id, quantity)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, product_id)
+         DO UPDATE SET quantity = public.stock.quantity + EXCLUDED.quantity`,
+        [bill.seller_id, item.product_id, item.quantity]
+      );
+
+      if (bill.buyer_id && bill.bill_type !== 'RETAIL_TO_CUSTOMER') {
+        const buyerStockResult = await client.query(
+          'SELECT quantity FROM public.stock WHERE user_id = $1 AND product_id = $2 FOR UPDATE',
+          [bill.buyer_id, item.product_id]
+        );
+        const buyerQuantity = buyerStockResult.rows[0] ? Number(buyerStockResult.rows[0].quantity) : 0;
+        if (buyerQuantity < Number(item.quantity)) {
+          const error = new Error('Cannot delete bill because buyer stock is already lower than the billed quantity');
+          error.status = 400;
+          throw error;
+        }
+
+        await client.query(
+          'UPDATE public.stock SET quantity = quantity - $1 WHERE user_id = $2 AND product_id = $3',
+          [item.quantity, bill.buyer_id, item.product_id]
+        );
+      }
+    }
+
+    await client.query('DELETE FROM public.stock_transactions WHERE bill_id = $1', [id]);
+    await client.query('DELETE FROM public.payments WHERE bill_id = $1', [id]);
+    await client.query('DELETE FROM public.bill_items WHERE bill_id = $1', [id]);
+    await client.query('DELETE FROM public.bills WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    transactionStarted = false;
+    res.json({ message: 'Bill deleted successfully and stock reversed' });
+  } catch (err) {
+    if (transactionStarted) await client.query('ROLLBACK');
+    console.error('Bill delete error:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Failed to delete bill and reverse stock' });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

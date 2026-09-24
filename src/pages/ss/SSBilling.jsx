@@ -23,7 +23,7 @@ export default function AdminBilling() {
   })
   const [newItem, setNewItem] = useState({ productId: 1, quantity: 1 })
 
-  const ssUsers = data.users.filter(u => u.role === 'SS')
+  const ssUsers = data.users.filter(u => u.role === 'DISTRIBUTOR')
 
   // Fetch sales bills safely on load
   useEffect(() => {
@@ -291,7 +291,7 @@ const handleTogglePaymentStatus = async (bill) => {
                   onChange={(e) => setBillForm(f => ({ ...f, buyerId: e.target.value }))}
                   className="input-field"
                 >
-                  <option value="">-- Select SS --</option>
+                  <option value="">-- Select Distributor --</option>
                   {ssUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
