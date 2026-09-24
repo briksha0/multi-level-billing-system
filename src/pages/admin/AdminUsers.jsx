@@ -27,6 +27,18 @@ export default function AdminUsers() {
 
   const usersList = Array.isArray(data?.users) ? data.users : []
 
+  const getParentCandidates = (role) => usersList.filter(u => {
+    if (role === 'SS') return u.role === 'ADMIN'
+    if (role === 'DISTRIBUTOR') return u.role === 'SS'
+    if (role === 'RETAILER') return u.role === 'DISTRIBUTOR'
+    return false
+  })
+
+  const handleRoleChange = (role) => {
+    const parent = getParentCandidates(role)[0]
+    setNewUser(prev => ({ ...prev, role, parentId: parent?.id || '' }))
+  }
+
   const filteredUsers = usersList.filter(u => {
     if (u.role === 'ADMIN') return false
     if (activeTab && u.role !== activeTab) return false
@@ -84,7 +96,8 @@ export default function AdminUsers() {
         ...newUser,
         username: newUser.username.toLowerCase().replace(/\s/g, '_'),
       })
-      setNewUser({ username: '', name: '', password: '', role: activeTab, parentId: 1 })
+      const parent = getParentCandidates(activeTab)[0]
+      setNewUser({ username: '', name: '', password: '', role: activeTab, parentId: parent?.id || '' })
       setShowModal(false)
     } catch (err) {
       setError(err.message || 'Failed to create user')
@@ -123,7 +136,12 @@ export default function AdminUsers() {
           <h2 className="text-2xl font-bold text-white">User Management</h2>
           <p className="text-dark-muted text-sm">Manage SS, Distributors, and Retailers</p>
         </div>
-        <button onClick={() => { setError(''); setShowModal(true); }} className="btn-primary flex items-center gap-2">
+        <button onClick={() => {
+          setError('')
+          const parent = getParentCandidates(activeTab)[0]
+          setNewUser(prev => ({ ...prev, role: activeTab, parentId: parent?.id || '' }))
+          setShowModal(true)
+        }} className="btn-primary flex items-center gap-2">
           <Plus size={18} />
           Add User
         </button>
@@ -137,7 +155,7 @@ export default function AdminUsers() {
           return (
             <button
               key={role}
-              onClick={() => { setActiveTab(role); setNewUser(prev => ({ ...prev, role })) }}
+              onClick={() => { setActiveTab(role); handleRoleChange(role) }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === role
                   ? 'bg-brand-500/15 text-brand-400 border border-brand-500/50'
                   : 'bg-dark-card border border-dark-border text-dark-muted hover:text-white'
@@ -280,7 +298,7 @@ export default function AdminUsers() {
                 <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Role</label>
                 <select
                   value={newUser.role}
-                  onChange={(e) => setNewUser(prev => ({ ...prev, role: e.target.value }))}
+                  onChange={(e) => handleRoleChange(e.target.value)}
                   className="input-field text-sm font-medium"
                 >
                   <option value="SS">Super Store</option>
@@ -291,16 +309,11 @@ export default function AdminUsers() {
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Parent User</label>
                 <select
-                  value={newUser.parentId}
+                  value={newUser.parentId || ''}
                   onChange={(e) => setNewUser(prev => ({ ...prev, parentId: parseInt(e.target.value, 10) }))}
                   className="input-field text-sm font-medium"
                 >
-                  {usersList.filter(u => {
-                    if (newUser.role === 'SS') return u.role === 'ADMIN'
-                    if (newUser.role === 'DISTRIBUTOR') return u.role === 'SS'
-                    if (newUser.role === 'RETAILER') return u.role === 'DISTRIBUTOR'
-                    return false
-                  }).map(u => (
+                  {getParentCandidates(newUser.role).map(u => (
                     <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
                   ))}
                 </select>

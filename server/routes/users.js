@@ -120,6 +120,20 @@ router.post('/', requireRole('ADMIN', 'SS', 'DISTRIBUTOR'), async (req, res) => 
 
     // Determine valid parent
     let validParentId = parentId;
+    if (req.user.role === 'ADMIN') {
+      const expectedParentRole = { SS: 'ADMIN', DISTRIBUTOR: 'SS', RETAILER: 'DISTRIBUTOR' }[role];
+      if (!expectedParentRole || !parentId) {
+        return res.status(400).json({ error: 'A valid parent user is required' });
+      }
+
+      const parentResult = await db.query(
+        'SELECT id FROM users WHERE id = $1 AND role = $2',
+        [parentId, expectedParentRole]
+      );
+      if (parentResult.rows.length === 0) {
+        return res.status(400).json({ error: `A ${expectedParentRole} parent is required for this user` });
+      }
+    }
     if (req.user.role === 'SS' && role === 'DISTRIBUTOR') validParentId = req.user.id;
     if (req.user.role === 'SS' && role === 'RETAILER') {
       if (!parentId) return res.status(400).json({ error: 'Parent distributor is required' });

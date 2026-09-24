@@ -13,6 +13,9 @@ export default function AdminBilling() {
   const [showCreateBill, setShowCreateBill] = useState(false)
   const [selectedBill, setSelectedBill] = useState(null)
   const [currentBillItems, setCurrentBillItems] = useState([])
+  // Replace `ssUsers` with a broader list or all non-admin users
+  const allUsers = Array.isArray(data?.users) ? data.users : []
+  const billableUsers = allUsers.filter(u => u.role !== 'ADMIN')
 
   const [billForm, setBillForm] = useState({
     buyerId: '',
@@ -22,8 +25,6 @@ export default function AdminBilling() {
     paymentMethod: 'Bank Transfer',
   })
   const [newItem, setNewItem] = useState({ productId: 1, quantity: 1 })
-
-  const ssUsers = data.users.filter(u => u.role === 'SS')
 
 
   // Add items array and product list reference into editForm state
@@ -370,17 +371,20 @@ const handleUpdateBill = async () => {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-dark-muted mb-2">Select Super Store *</label>
-                <select
-                  value={billForm.buyerId}
-                  onChange={(e) => setBillForm(f => ({ ...f, buyerId: e.target.value }))}
-                  className="input-field"
-                >
-                  <option value="">-- Select SS --</option>
-                  {ssUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-              </div>
-
+                  <label className="block text-sm text-dark-muted mb-2">Select Buyer *</label>
+                  <select
+                    value={billForm.buyerId}
+                    onChange={(e) => setBillForm(f => ({ ...f, buyerId: e.target.value }))}
+                    className="input-field"
+                  >
+                    <option value="">-- Select Buyer Account --</option>
+                    {billableUsers.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               {/* Add Items */}
               <div className="p-4 rounded-xl bg-dark-bg border border-dark-border">
                 <div className="text-sm font-medium text-white mb-3 flex items-center gap-2">
