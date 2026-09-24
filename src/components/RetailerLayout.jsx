@@ -28,7 +28,7 @@ export default function RetailerLayout() {
               R
             </div>
             <div>
-              <div className="font-bold text-white">Auaura Essencials</div>
+              <div className="font-bold text-white">Aquaura Essentials</div>
               <div className="text-xs text-dark-muted">Retailer Panel</div>
             </div>
           </div>

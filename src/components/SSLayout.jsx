@@ -47,7 +47,7 @@ export default function SSLayout() {
               S
             </div>
             <div>
-              <div className="font-bold text-white text-base">Auaura Essencials</div>
+              <div className="font-bold text-white text-base">Aquaura Essentials</div>
               <div className="text-xs text-dark-muted">Super Store Panel</div>
             </div>
           </div>
