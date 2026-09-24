@@ -11,7 +11,9 @@ export default function AdminStock() {
   const [showAddStock, setShowAddStock] = useState(false)
   const [showDamageStock, setShowDamageStock] = useState(false)
   const [stockForm, setStockForm] = useState({ productId: 1, quantity: '' })
-  
+  // Replace old stockForm state with these:
+  const [stockItems, setStockItems] = useState([])
+  const [newStockItem, setNewStockItem] = useState({ productId: 1, quantity: 1 })
   // Multi-product damage form state
   const [damageItems, setDamageItems] = useState([])
   const [newDamageItem, setNewDamageItem] = useState({ productId: 1, quantity: 1 })
@@ -78,6 +80,59 @@ export default function AdminStock() {
     }
   }
 
+  const addStockItemToList = () => {
+  const product = productsList.find(p => Number(p.id) === Number(newStockItem.productId))
+  const qty = parseInt(newStockItem.quantity, 10)
+  if (!product || isNaN(qty) || qty <= 0) return
+
+  const exists = stockItems.find(i => Number(i.productId) === Number(newStockItem.productId))
+  if (exists) {
+    setStockItems(stockItems.map(i => Number(i.productId) === Number(newStockItem.productId) ? { ...i, quantity: i.quantity + qty } : i))
+  } else {
+    setStockItems([...stockItems, {
+      productId: product.id,
+      productName: product.name,
+      quantity: qty
+    }])
+  }
+  setNewStockItem({ productId: productsList[0]?.id || 1, quantity: 1 })
+}
+
+const removeStockItemFromList = (productId) => {
+  setStockItems(stockItems.filter(i => Number(i.productId) !== Number(productId)))
+}
+
+// Batch submit added stock items
+const handleBatchStockSubmit = async () => {
+  if (stockItems.length === 0) return
+
+  try {
+    for (const item of stockItems) {
+      await addOpeningStock(selectedUser, item.productId, item.quantity)
+    }
+
+    if (refresh) await refresh()
+
+    // Reload stock map
+    const response = await fetch(`/api/stock?userId=${selectedUser}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('mlb_token')}` }
+    })
+    const stockData = await response.json()
+    const map = {}
+    if (Array.isArray(stockData)) {
+      stockData.forEach(s => {
+        map[s.product_id || s.productId] = Number(s.quantity) || 0
+      })
+    }
+    setUserStockMap(map)
+
+    setStockItems([])
+    setShowAddStock(false)
+  } catch (err) {
+    console.error('Error adding multiple stock items:', err)
+    alert(err.message || 'Failed to add stock items')
+  }
+}
   // Add item to multi-product damage list with restriction against going negative
   const addDamageItemToList = () => {
     const product = productsList.find(p => Number(p.id) === Number(newDamageItem.productId))
@@ -277,46 +332,76 @@ export default function AdminStock() {
           </table>
         </div>
       </div>
+     
+     {/* Add Stock Modal */}
+{showAddStock && (
+  <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+    <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl">
+      <h3 className="text-lg font-bold text-white mb-1">Add Opening / Restock Inventory</h3>
+      <p className="text-xs text-dark-muted mb-6">Adding items for user: <span className="text-white font-semibold">{currentUser?.name}</span></p>
       
-      {/* Add Stock Modal */}
-      {showAddStock && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-2">Add Opening Stock</h3>
-            <p className="text-xs text-dark-muted mb-6">Updating inventory for: <span className="text-white font-semibold">{currentUser?.name}</span></p>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Product</label>
-                <select
-                  value={stockForm.productId}
-                  onChange={(e) => setStockForm(f => ({ ...f, productId: parseInt(e.target.value, 10) }))}
-                  className="input-field text-sm font-medium"
-                >
-                  {productsList.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Quantity to Add</label>
-                <input
-                  type="number"
-                  value={stockForm.quantity}
-                  onChange={(e) => setStockForm(f => ({ ...f, quantity: e.target.value }))}
-                  className="input-field text-sm font-medium"
-                  min="0"
-                  placeholder="0"
-                />
-              </div>
-            </div>
-            
-            <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
-              <button onClick={() => setShowAddStock(false)} className="flex-1 btn-secondary py-2.5 text-sm font-semibold">Cancel</button>
-              <button onClick={handleAddStock} className="flex-1 btn-primary py-2.5 text-sm font-bold">Add Stock</button>
-            </div>
+      <div className="space-y-5">
+        {/* Product Picker Box */}
+        <div className="p-4 rounded-2xl bg-dark-bg/60 border border-dark-border space-y-3">
+          <div className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+            <ShoppingCart size={16} className="text-brand-500" /> Select Product & Quantity
+          </div>
+          <div className="flex gap-3 items-center">
+            <select
+              value={newStockItem.productId}
+              onChange={(e) => setNewStockItem(i => ({ ...i, productId: parseInt(e.target.value, 10) }))}
+              className="input-field flex-1 text-sm"
+            >
+              {productsList.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+            </select>
+            <input
+              type="number"
+              value={newStockItem.quantity}
+              onChange={(e) => setNewStockItem(i => ({ ...i, quantity: e.target.value }))}
+              className="input-field w-24 text-sm text-center"
+              min="1"
+              placeholder="Qty"
+            />
+            <button onClick={addStockItemToList} className="btn-primary px-5 py-2.5 text-sm font-semibold">Add</button>
           </div>
         </div>
-      )}
 
+        {/* Added Stock Items Table */}
+        {stockItems.length > 0 && (
+          <div className="rounded-2xl border border-dark-border overflow-hidden bg-dark-bg/40">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-dark-bg text-dark-muted text-[11px] uppercase font-bold tracking-wider border-b border-dark-border">
+                  <th className="text-left px-4 py-3">Product Name</th>
+                  <th className="text-right px-4 py-3">Quantity to Add</th>
+                  <th className="px-4 py-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-dark-border/50 text-slate-200">
+                {stockItems.map(item => (
+                  <tr key={item.productId} className="hover:bg-white/[0.01]">
+                    <td className="px-4 py-3 font-semibold text-white">{item.productName}</td>
+                    <td className="px-4 py-3 text-right text-emerald-400 font-bold">+{item.quantity}</td>
+                    <td className="px-4 py-3 text-center">
+                      <button onClick={() => removeStockItemFromList(item.productId)} className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/15 transition">
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      
+      <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
+        <button onClick={() => setShowAddStock(false)} className="flex-1 btn-secondary py-3 text-sm font-semibold">Cancel</button>
+        <button onClick={handleBatchStockSubmit} disabled={stockItems.length === 0} className="flex-1 btn-primary py-3 text-sm font-bold disabled:opacity-50">Confirm & Save Stock</button>
+      </div>
+    </div>
+  </div>
+)}
       {/* Report Multiple Damaged Goods Modal */}
       {showDamageStock && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
