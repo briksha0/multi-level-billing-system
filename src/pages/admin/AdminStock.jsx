@@ -230,7 +230,7 @@ const handleBatchStockSubmit = async () => {
             onChange={(e) => setSelectedUser(parseInt(e.target.value, 10))}
             className="input-field w-auto text-sm font-medium"
           >
-            <option value="">Select User</option>
+            <option value="">Aquaura Essencials</option>
             {manageableUsers.map(u => (
               <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
             ))}
