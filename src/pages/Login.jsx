@@ -47,6 +47,13 @@ export default function Login() {
     setPassword(acc.password)
   }
 
+  const handleInputKeyDown = (event) => {
+    if (event.key !== 'Enter' || loading) return
+
+    event.preventDefault()
+    event.currentTarget.form?.requestSubmit()
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-5xl grid md:grid-cols-2 gap-8 items-center">
@@ -124,6 +131,7 @@ export default function Login() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
+                  onKeyDown={handleInputKeyDown}
                   className="input-field pl-10 bg-white text-dark-text border-dark-border focus:border-brand-500 focus:ring-1 focus:ring-brand-500 w-full rounded-xl py-2.5 outline-none text-sm"
                   placeholder="Enter username"
                   required
@@ -139,6 +147,7 @@ export default function Login() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={handleInputKeyDown}
                   className="input-field pl-10 bg-white text-dark-text border-dark-border focus:border-brand-500 focus:ring-1 focus:ring-brand-500 w-full rounded-xl py-2.5 outline-none text-sm"
                   placeholder="Enter password"
                   required

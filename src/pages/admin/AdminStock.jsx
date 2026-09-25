@@ -18,7 +18,7 @@ export default function AdminStock() {
   const [damageItems, setDamageItems] = useState([])
   const [newDamageItem, setNewDamageItem] = useState({ productId: 1, quantity: 1 })
   const [damageReason, setDamageReason] = useState('Damaged Goods')
-
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [userStockMap, setUserStockMap] = useState({})
 
   const usersList = Array.isArray(data?.users) ? data.users : []
@@ -104,9 +104,11 @@ const removeStockItemFromList = (productId) => {
 
 // Batch submit added stock items
 const handleBatchStockSubmit = async () => {
-  if (stockItems.length === 0) return
+  if (stockItems.length === 0 || isSubmitting) return
 
   try {
+    setIsSubmitting(true) // Lock the button immediately
+
     for (const item of stockItems) {
       await addOpeningStock(selectedUser, item.productId, item.quantity)
     }
@@ -131,6 +133,8 @@ const handleBatchStockSubmit = async () => {
   } catch (err) {
     console.error('Error adding multiple stock items:', err)
     alert(err.message || 'Failed to add stock items')
+  } finally {
+    setIsSubmitting(false) // Unlock when finished
   }
 }
   // Add item to multi-product damage list with restriction against going negative
