@@ -103,11 +103,12 @@ const removeStockItemFromList = (productId) => {
 }
 
 // Batch submit added stock items
+// Update your batch stock submission handler
 const handleBatchStockSubmit = async () => {
   if (stockItems.length === 0 || isSubmitting) return
 
   try {
-    setIsSubmitting(true) // Lock the button immediately
+    setIsSubmitting(true) // Lock submissions
 
     for (const item of stockItems) {
       await addOpeningStock(selectedUser, item.productId, item.quantity)
@@ -134,9 +135,11 @@ const handleBatchStockSubmit = async () => {
     console.error('Error adding multiple stock items:', err)
     alert(err.message || 'Failed to add stock items')
   } finally {
-    setIsSubmitting(false) // Unlock when finished
+    setIsSubmitting(false) // Unlock when done
   }
 }
+
+
   // Add item to multi-product damage list with restriction against going negative
   const addDamageItemToList = () => {
     const product = productsList.find(p => Number(p.id) === Number(newDamageItem.productId))
@@ -401,7 +404,20 @@ const handleBatchStockSubmit = async () => {
       
       <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
         <button onClick={() => setShowAddStock(false)} className="flex-1 btn-secondary py-3 text-sm font-semibold">Cancel</button>
-        <button onClick={handleBatchStockSubmit} disabled={stockItems.length === 0} className="flex-1 btn-primary py-3 text-sm font-bold disabled:opacity-50">Confirm & Save Stock</button>
+        <button 
+    onClick={handleBatchStockSubmit} 
+    disabled={stockItems.length === 0 || isSubmitting} 
+    className="flex-1 btn-primary py-3 text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+  >
+    {isSubmitting ? (
+      <>
+        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+        Saving Stock...
+      </>
+    ) : (
+      'Confirm & Save Stock'
+    )}
+  </button>
       </div>
     </div>
   </div>
