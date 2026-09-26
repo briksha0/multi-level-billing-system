@@ -179,10 +179,20 @@ export function DataProvider({ children }) {
     }
   }, [data.bills, data.stock])
 
+
   // Add user
   const addUser = useCallback(async (userData) => {
     try {
-      const result = await api.createUser(userData)
+      // Map parentId to parent_id to match backend expectations
+      const payload = {
+        name: userData.name,
+        username: userData.username,
+        password: userData.password,
+        role: userData.role,
+        parentId: userData.parentId ? parseInt(userData.parentId, 10) : (userData.parent_id ? parseInt(userData.parent_id, 10) : undefined)
+      }
+
+      const result = await api.createUser(payload)
       const users = await api.getUsers()
       setData(prev => ({ ...prev, users }))
       return result

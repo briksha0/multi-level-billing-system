@@ -27,12 +27,16 @@ export default function AdminUsers() {
 
   const usersList = Array.isArray(data?.users) ? data.users : []
 
-  const getParentCandidates = (role) => usersList.filter(u => {
-    if (role === 'SS') return u.role === 'ADMIN'
-    if (role === 'DISTRIBUTOR') return u.role === 'SS'
-    if (role === 'RETAILER') return u.role === 'DISTRIBUTOR'
-    return false
-  })
+   const getParentCandidates = (role) => {
+    if (role === 'SS' && user?.role === 'ADMIN') return [user]
+    
+    return usersList.filter(u => {
+      if (role === 'SS') return u.role === 'ADMIN'
+      if (role === 'DISTRIBUTOR') return u.role === 'SS'
+      if (role === 'RETAILER') return u.role === 'DISTRIBUTOR'
+      return false
+    })
+  }
 
   const handleRoleChange = (role) => {
     const parent = getParentCandidates(role)[0]
@@ -85,8 +89,8 @@ export default function AdminUsers() {
   }
 
   const handleAddUser = async () => {
-    if (!newUser.username || !newUser.name || !newUser.password) {
-      setError('All fields are required')
+    if (!newUser.username || !newUser.name || !newUser.password || !newUser.parentId) {
+      setError('All fields, including a valid Parent User, are required.')
       return
     }
     try {
@@ -95,9 +99,10 @@ export default function AdminUsers() {
       await addUser({
         ...newUser,
         username: newUser.username.toLowerCase().replace(/\s/g, '_'),
+        parentId: parseInt(newUser.parentId, 10),
       })
-      const parent = getParentCandidates(activeTab)[0]
-      setNewUser({ username: '', name: '', password: '', role: activeTab, parentId: parent?.id || '' })
+      const defaultParent = getParentCandidates(activeTab)[0]
+      setNewUser({ username: '', name: '', password: '', role: activeTab, parentId: defaultParent?.id || 1 })
       setShowModal(false)
     } catch (err) {
       setError(err.message || 'Failed to create user')
@@ -106,11 +111,14 @@ export default function AdminUsers() {
     }
   }
 
-  const getParentName = (parentId) => {
+   const getParentName = (parentId) => {
+    if (Number(parentId) === Number(user?.id)) return user?.name || '-'
+    
     const parent = usersList.find(u => Number(u.id) === Number(parentId))
     return parent?.name || '-'
   }
 
+  
   const handleDeleteUser = async (u) => {
     if (!u) return
     if (u.id === user?.id) {
@@ -307,14 +315,17 @@ export default function AdminUsers() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Parent User</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Parent User *</label>
                 <select
                   value={newUser.parentId || ''}
                   onChange={(e) => setNewUser(prev => ({ ...prev, parentId: parseInt(e.target.value, 10) }))}
                   className="input-field text-sm font-medium"
                 >
+                  <option value="" disabled>-- Select Parent User --</option>
                   {getParentCandidates(newUser.role).map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.role})
+                    </option>
                   ))}
                 </select>
               </div>

@@ -20,7 +20,7 @@ export default function AdminStock() {
   const [damageReason, setDamageReason] = useState('Damaged Goods')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [userStockMap, setUserStockMap] = useState({})
-
+  const [isSubmittingDamage, setIsSubmittingDamage] = useState(false)
   const usersList = Array.isArray(data?.users) ? data.users : []
   const productsList = Array.isArray(data?.products) ? data.products : []
 
@@ -172,57 +172,61 @@ const handleBatchStockSubmit = async () => {
   }
 
   // Submit all damaged items to backend
-  const handleBatchDamageSubmit = async () => {
-    if (damageItems.length === 0) return
+const handleBatchDamageSubmit = async () => {
+  if (damageItems.length === 0 || isSubmittingDamage) return
 
-    try {
-      for (const item of damageItems) {
-        const availableStock = userStockMap[item.productId] || 0
-        if (item.quantity > availableStock) {
-          throw new Error(`Insufficient stock for ${item.productName}. Available: ${availableStock}, Requested to remove: ${item.quantity}`)
-        }
+  try {
+    setIsSubmittingDamage(true)
 
-        const response = await fetch(`/api/stock/adjust`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
-          },
-          body: JSON.stringify({
-            userId: selectedUser,
-            productId: item.productId,
-            quantityChange: -item.quantity // Negative value deducts stock
-          })
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to update stock for product ID ${item.productId}`)
-        }
+    for (const item of damageItems) {
+      const availableStock = userStockMap[item.productId] || 0
+      if (item.quantity > availableStock) {
+        throw new Error(`Insufficient stock for ${item.productName}. Available: ${availableStock}, Requested to remove: ${item.quantity}`)
       }
 
-      if (refresh) await refresh()
-
-      // Reload stock map
-      const stockRes = await fetch(`/api/stock?userId=${selectedUser}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('mlb_token')}` }
+      const response = await fetch(`/api/stock/adjust`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
+        },
+        body: JSON.stringify({
+          userId: selectedUser,
+          productId: item.productId,
+          quantityChange: -item.quantity // Negative value deducts stock
+        })
       })
-      const stockData = await stockRes.json()
-      const map = {}
-      if (Array.isArray(stockData)) {
-        stockData.forEach(s => {
-          map[s.product_id || s.productId] = Number(s.quantity) || 0
-        })
-      }
-      setUserStockMap(map)
 
-      setDamageItems([])
-      setDamageReason('Damaged Goods')
-      setShowDamageStock(false)
-    } catch (err) {
-      console.error('Error reporting multiple damages:', err)
-      alert(err.message || 'Failed to adjust stock for damaged goods')
+      if (!response.ok) {
+        throw new Error(`Failed to update stock for product ID ${item.productId}`)
+      }
     }
+
+    if (refresh) await refresh()
+
+    // Reload stock map
+    const stockRes = await fetch(`/api/stock?userId=${selectedUser}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('mlb_token')}` }
+    })
+    const stockData = await stockRes.json()
+    const map = {}
+    if (Array.isArray(stockData)) {
+      stockData.forEach(s => {
+        map[s.product_id || s.productId] = Number(s.quantity) || 0
+      })
+    }
+    setUserStockMap(map)
+
+    setDamageItems([])
+    setDamageReason('Damaged Goods')
+    setShowDamageStock(false)
+  } catch (err) {
+    console.error('Error reporting multiple damages:', err)
+    alert(err.message || 'Failed to adjust stock for damaged goods')
+  } finally {
+    setIsSubmittingDamage(false)
   }
+}
 
   return (
     <div className="space-y-6">
@@ -500,7 +504,20 @@ const handleBatchStockSubmit = async () => {
             
             <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
               <button onClick={() => setShowDamageStock(false)} className="flex-1 btn-secondary py-3 text-sm font-semibold">Cancel</button>
-              <button onClick={handleBatchDamageSubmit} disabled={damageItems.length === 0} className="flex-1 btn-primary py-3 text-sm font-bold bg-amber-600 hover:bg-amber-500 disabled:opacity-50">Submit Damage Report</button>
+              <button 
+    onClick={handleBatchDamageSubmit} 
+    disabled={damageItems.length === 0 || isSubmittingDamage} 
+    className="flex-1 btn-primary py-3 text-sm font-bold bg-amber-600 hover:bg-amber-500 disabled:opacity-50 flex items-center justify-center gap-2"
+  >
+    {isSubmittingDamage ? (
+      <>
+        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+        Submitting Report...
+      </>
+    ) : (
+      'Submit Damage Report'
+    )}
+  </button>
             </div>
           </div>
         </div>
