@@ -1,4 +1,4 @@
-// src/components/receipts/BillingReceipt.jsx
+﻿// src/components/receipts/BillingReceipt.jsx
 import { Printer } from 'lucide-react'
 
 export default function BillingReceipt({ selectedBill, currentBillItems, getUserById, getProductById, onClose }) {
@@ -43,10 +43,10 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
   }
 
   return (
-    <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4 overflow-y-auto print:p-0 print:bg-white print:inset-auto">
+    <div className="print-receipt-modal fixed inset-0 bg-black/75 flex items-start justify-center z-50 p-4 py-8 overflow-y-auto">
 
-      {/* Container forced precisely to A4 dimensions (210mm x 297mm) */}
-      <div className="bg-white text-slate-900 rounded-2xl p-10 w-full max-w-[210mm] min-h-[200mm] shadow-2xl relative flex flex-col justify-between print:m-10 print:p-10 print:shadow-none print:w-[297mm] print:h-[430mm] print:max-w-none print:rounded-none">
+      {/* Main A4 Receipt Container */}
+      <div className="bg-white text-slate-900 rounded-2xl p-10 w-full max-w-[210mm] min-h-[200mm] shadow-2xl relative flex flex-col justify-between print:m-0 print:p-0 print:shadow-none print:w-full print:max-w-none print:h-auto print:min-h-0 print:rounded-none">
 
         {/* Top Header Action Controls (Hidden on print) */}
         <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-200 print:hidden">
@@ -54,7 +54,7 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
           <div className="flex items-center gap-3">
             <button
                 onClick={handlePrintInvoice}
-                className="bg-green-600 text-black-600 px-5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-green-700 transition"
+                className="bg-green-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-green-700 transition"
               >
                 <Printer size={16} />
                 Print
@@ -88,7 +88,7 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
           </div>
 
           {/* Buyer Details Block */}
-          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 print:break-inside-avoid">
             <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Billed To (Buyer):</h4>
             <div className="text-slate-900 font-bold text-sm">{buyerName}</div>
             <p className="text-xs text-slate-600 mt-0.5">Address: Registered Operating Distribution Network, Uttar Pradesh</p>
@@ -97,17 +97,17 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
 
           {/* Items Table */}
           <div className="border border-slate-200 rounded-xl overflow-hidden">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse table-fixed">
               <thead>
                 <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase font-bold tracking-wider border-b border-slate-200">
-                  <th className="p-2.5">#</th>
-                  <th className="p-2.5">Item Name</th>
-                  <th className="p-2.5">HSN/SAC</th>
-                  <th className="p-2.5 text-center">Qty</th>
-                  <th className="p-2.5 text-center">Unit</th>
-                  <th className="p-2.5 text-right">Price (₹)</th>
-                  <th className="p-2.5 text-right">GST (18%)</th>
-                  <th className="p-2.5 text-right">Amount (₹)</th>
+                  <th className="p-2.5 w-10 text-center">#</th>
+                  <th className="p-2.5 w-[28%]">Item Name</th>
+                  <th className="p-2.5 w-24">HSN/SAC</th>
+                  <th className="p-2.5 w-16 text-center">Qty</th>
+                  <th className="p-2.5 w-16 text-center">Unit</th>
+                  <th className="p-2.5 w-24 text-right">Price (₹)</th>
+                  <th className="p-2.5 w-24 text-right">GST (18%)</th>
+                  <th className="p-2.5 w-28 text-right">Amount (₹)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-slate-700 text-xs">
@@ -120,8 +120,8 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
 
                   return (
                     <tr key={item.id || idx} className="hover:bg-slate-50/50">
-                      <td className="p-2.5 font-medium">{idx + 1}</td>
-                      <td className="p-2.5 font-semibold text-slate-900">{productName}</td>
+                      <td className="p-2.5 font-medium text-center">{idx + 1}</td>
+                      <td className="p-2.5 font-semibold text-slate-900 truncate">{productName}</td>
                       <td className="p-2.5 text-slate-500 font-mono text-[11px]">{prod?.hsn || item.hsn || '34029092'}</td>
                       <td className="p-2.5 text-center font-bold">{item.quantity}</td>
                       <td className="p-2.5 text-center text-slate-500">{prod?.unit || item.unit || 'Btl'}</td>
@@ -132,10 +132,24 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
                   )
                 })}
               </tbody>
-              <tfoot>
-                <tr className="bg-slate-50 text-slate-800">
-                  <td colSpan="7" className="p-2.5 text-right text-[11px] font-bold uppercase tracking-wider">Total Amount</td>
-                  <td className="p-2.5 text-right font-bold text-slate-900">₹{grandTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <tfoot className="print:break-inside-avoid">
+                <tr className="bg-slate-50/50 text-slate-800 border-t border-slate-200">
+                  <td colSpan="7" className="p-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Subtotal</td>
+                  <td className="p-2.5 text-right font-medium text-slate-900">₹{Number(selectedBill.subtotal || totalTaxable).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+                {Number(selectedBill.discount) > 0 && (
+                  <tr className="bg-slate-50/50 text-slate-800">
+                    <td colSpan="7" className="p-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-red-500">Discount</td>
+                    <td className="p-2.5 text-right font-medium text-red-600">-₹{Number(selectedBill.discount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  </tr>
+                )}
+                <tr className="bg-slate-50/50 text-slate-800">
+                  <td colSpan="7" className="p-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Total GST (18%)</td>
+                  <td className="p-2.5 text-right font-medium text-slate-900">₹{Number(selectedBill.gst || (totalCgst + totalSgst)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+                <tr className="bg-slate-100 text-slate-900 border-t border-slate-300">
+                  <td colSpan="7" className="p-2.5 text-right text-[12px] font-black uppercase tracking-wider">Grand Total</td>
+                  <td className="p-2.5 text-right font-black text-lg text-slate-900">₹{Number(selectedBill.grand_total || selectedBill.grandTotal || grandTotalAmount - Number(selectedBill.discount || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 </tr>
               </tfoot>
             </table>
@@ -144,7 +158,7 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
         </div>
 
         {/* Footer: Bank Details & Authorized Signatory */}
-        <div className="grid grid-cols-2 gap-4 border-t border-slate-300 pt-5 items-end mt-auto">
+        <div className="grid grid-cols-2 gap-4 border-t border-slate-300 pt-5 items-end mt-auto print:mt-10 print:break-inside-avoid">
           <div>
             <h5 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Bank Details</h5>
             <p className="text-[11px] text-slate-600"><strong>Bank:</strong> HDFC BANK, SARAIDHELA</p>
@@ -161,19 +175,45 @@ export default function BillingReceipt({ selectedBill, currentBillItems, getUser
 
       </div>
 
-      {/* Global CSS Print rules to enforce full A4 size page layout */}
+      {/* Print Styles ensuring Table Header Rows (thead) repeat correctly */}
       <style>{`
         @media print {
           @page {
             size: A4 portrait;
-            margin: 0mm;
+            margin: 8mm;
           }
           
-          .fixed {
+          body {
+            background: white !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .print-receipt-modal {
             position: absolute !important;
-            inset: 0 !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
             background: white !important;
             padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+
+          /* Forces the column headers row to repeat at the top of every new page */
+          thead {
+            display: table-header-group !important;
+          }
+
+          tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+
+          .print\\:break-inside-avoid {
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
         }
       `}</style>
