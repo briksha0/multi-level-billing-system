@@ -119,33 +119,45 @@ router.post('/', requireRole('ADMIN', 'SS', 'DISTRIBUTOR'), async (req, res) => 
     }
 
     // Determine valid parent
+       // Determine valid parent
     let validParentId = parentId;
     if (req.user.role === 'ADMIN') {
-      const expectedParentRole = { SS: 'ADMIN', DISTRIBUTOR: 'SS', RETAILER: 'DISTRIBUTOR' }[role];
-      if (!expectedParentRole || !parentId) {
+      const allowedParentRoles = { 
+        SS: ['ADMIN'], 
+        DISTRIBUTOR: ['SS', 'ADMIN'], 
+        RETAILER: ['SS', 'ADMIN', 'DISTRIBUTOR'] 
+      }[role];
+    
+      if (!allowedParentRoles || !parentId) {
         return res.status(400).json({ error: 'A valid parent user is required' });
       }
-
+    
       const parentResult = await db.query(
-        'SELECT id FROM users WHERE id = $1 AND role = $2',
-        [parentId, expectedParentRole]
+        'SELECT id, role FROM users WHERE id = $1 AND role = ANY($2)',
+        [parentId, allowedParentRoles]
       );
+      
       if (parentResult.rows.length === 0) {
-        return res.status(400).json({ error: `A ${expectedParentRole} parent is required for this user` });
+        return res.status(400).json({ error: `A valid parent role (${allowedParentRoles.join(' or ')}) is required for this user` });
+      }
+      validParentId = parentId;
+    }
+    else if (req.user.role === 'SS') {
+      if (role === 'DISTRIBUTOR') {
+        validParentId = req.user.id;
+      } else if (role === 'RETAILER') {
+        if (!parentId) return res.status(400).json({ error: 'Parent distributor is required' });
+        const parentResult = await db.query('SELECT id, parent_id FROM users WHERE id = $1 AND role = $2', [parentId, 'DISTRIBUTOR']);
+        const parent = parentResult.rows[0];
+        if (!parent || parent.parent_id !== req.user.id) {
+          return res.status(403).json({ error: 'Invalid parent distributor' });
+        }
+        validParentId = parentId;
       }
     }
-    if (req.user.role === 'SS' && role === 'DISTRIBUTOR') validParentId = req.user.id;
-    if (req.user.role === 'SS' && role === 'RETAILER') {
-      if (!parentId) return res.status(400).json({ error: 'Parent distributor is required' });
-
-      const parentResult = await db.query('SELECT id, parent_id FROM users WHERE id = $1 AND role = $2', [parentId, 'DISTRIBUTOR']);
-      const parent = parentResult.rows[0];
-
-      if (!parent || parent.parent_id !== req.user.id) {
-        return res.status(403).json({ error: 'Invalid parent distributor' });
-      }
+    else if (req.user.role === 'DISTRIBUTOR') {
+      if (role === 'RETAILER') validParentId = req.user.id;
     }
-    if (req.user.role === 'DISTRIBUTOR') validParentId = req.user.id;
 
     // Check existing username
     const existingResult = await db.query('SELECT id FROM users WHERE username = $1', [username.toLowerCase()]);

@@ -28,14 +28,15 @@ export default function AdminUsers() {
   const usersList = Array.isArray(data?.users) ? data.users : []
 
    const getParentCandidates = (role) => {
-    if (role === 'SS' && user?.role === 'ADMIN') return [user]
+    let base = usersList;
+    if (user?.role === 'ADMIN' && !base.find(u => u.id === user.id)) {
+       base = [user, ...base];
+    }
     
-    return usersList.filter(u => {
-      if (role === 'SS') return u.role === 'ADMIN'
-      if (role === 'DISTRIBUTOR') return u.role === 'SS'
-      if (role === 'RETAILER') return u.role === 'DISTRIBUTOR'
-      return false
-    })
+    if (role === 'SS') return base.filter(u => u.role === 'ADMIN');
+    if (role === 'DISTRIBUTOR') return base.filter(u => u.role === 'SS' || u.role === 'ADMIN');
+    if (role === 'RETAILER') return base.filter(u => u.role === 'DISTRIBUTOR' || u.role === 'SS' || u.role === 'ADMIN');
+    return [];
   }
 
   const handleRoleChange = (role) => {
@@ -88,7 +89,7 @@ export default function AdminUsers() {
     }
   }
 
-  const handleAddUser = async () => {
+ const handleAddUser = async () => {
     if (!newUser.username || !newUser.name || !newUser.password || !newUser.parentId) {
       setError('All fields, including a valid Parent User, are required.')
       return
@@ -111,13 +112,13 @@ export default function AdminUsers() {
     }
   }
 
-   const getParentName = (parentId) => {
-    if (Number(parentId) === Number(user?.id)) return user?.name || '-'
+  const getParentName = (parentId) => {
+    if (!parentId) return '-'
+    if (Number(parentId) === Number(user?.id)) return user?.name || 'Admin'
     
     const parent = usersList.find(u => Number(u.id) === Number(parentId))
     return parent?.name || '-'
   }
-
   
   const handleDeleteUser = async (u) => {
     if (!u) return
