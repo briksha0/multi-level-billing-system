@@ -40,7 +40,7 @@ const handleOpenEdit = async (bill) => {
     const items = Array.isArray(billDetail.items) ? billDetail.items : []
     
     setEditForm({
-      discount: Number(bill.discount || 0),
+      discount: (Number(bill.discount || 0) / (items.reduce((s,i) => s + (Number(i.quantity||1)*Number(i.rate||0)), 0) || 1) * 100).toFixed(2),
       paidAmount: Number(bill.paidAmount ?? bill.paid_amount ?? 0),
       paymentMethod: bill.paymentMethod || bill.payment_method || 'Bank Transfer',
       items: items.map(i => ({
@@ -73,7 +73,7 @@ const handleUpdateBill = async () => {
   if (!editingBill) return
   try {
     await api.updateBill(editingBill.id, {
-      discount: parseFloat(editForm.discount) || 0,
+      discount: parseFloat(((editForm.items.reduce((sum, item) => sum + item.quantity * item.rate, 0) * (parseFloat(editForm.discount) || 0)) / 100).toFixed(2)),
       paidAmount: parseFloat(editForm.paidAmount) || 0,
       paymentMethod: editForm.paymentMethod,
       items: editForm.items.map(i => ({
@@ -188,8 +188,9 @@ const handleUpdateBill = async () => {
 
   const subtotal = calculateSubtotal()
   const gst = calculateGST(subtotal)
-  const discount = billForm.discount || 0
-  const grandTotal = subtotal - discount + gst
+  const discountPercent = billForm.discount || 0
+  const discountAmount = (subtotal * discountPercent) / 100
+  const grandTotal = subtotal - discountAmount + gst
   const due = grandTotal - (billForm.paidAmount || 0)
 
   const handleCreateBill = async () => {
@@ -199,7 +200,7 @@ const handleUpdateBill = async () => {
         sellerId: user?.id || 1,
         buyerId: parseInt(billForm.buyerId, 10),
         billType: 'ADMIN_TO_SS',
-        discount: parseFloat(discount),
+        discount: parseFloat(discountAmount.toFixed(2)),
         gst: parseFloat(gst.toFixed(2)),
         paidAmount: parseFloat(billForm.paidAmount) || 0,
         paymentMethod: billForm.paymentMethod,
@@ -454,7 +455,7 @@ const handleUpdateBill = async () => {
                   <span className="text-brand-300 font-medium">₹{gst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-sm items-center">
-                  <span className="text-dark-muted">Discount</span>
+                  <span className="text-dark-muted">Discount (%)</span>
                   <input 
                     type="number" 
                     value={billForm.discount} 

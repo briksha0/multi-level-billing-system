@@ -101,8 +101,9 @@ export default function AdminBilling() {
 
   const subtotal = calculateSubtotal()
   const gst = calculateGST(subtotal)
-  const discount = billForm.discount || 0
-  const grandTotal = subtotal - discount + gst
+  const discountPercent = billForm.discount || 0
+  const discountAmount = (subtotal * discountPercent) / 100
+  const grandTotal = subtotal - discountAmount + gst
   const due = grandTotal - (billForm.paidAmount || 0)
 
   const handleCreateBill = async () => {
@@ -112,7 +113,7 @@ export default function AdminBilling() {
         sellerId: user?.id || 1,
         buyerId: parseInt(billForm.buyerId, 10),
         billType: 'ADMIN_TO_SS',
-        discount: parseFloat(discount),
+        discount: parseFloat(discountAmount.toFixed(2)),
         gst: parseFloat(gst.toFixed(2)),
         paidAmount: parseFloat(billForm.paidAmount) || 0,
         paymentMethod: billForm.paymentMethod,
@@ -365,7 +366,7 @@ const handleTogglePaymentStatus = async (bill) => {
                   <span className="text-brand-300 font-medium">₹{gst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-sm items-center">
-                  <span className="text-dark-muted">Discount</span>
+                  <span className="text-dark-muted">Discount (%)</span>
                   <input 
                     type="number" 
                     value={billForm.discount} 

@@ -1,50 +1,41 @@
 const fs = require('fs');
-let content = fs.readFileSync('server/routes/users.js', 'utf8');
+let content = fs.readFileSync('src/pages/admin/AdminBilling.jsx', 'utf8');
 
-const replacement =       let validParentId = parentId;
-      
-      if (req.user.role === 'ADMIN') {
-        const allowedParentRoles = { 
-          SS: ['ADMIN'], 
-          DISTRIBUTOR: ['SS', 'ADMIN'], 
-          RETAILER: ['SS', 'ADMIN', 'DISTRIBUTOR'] 
-        }[role];
-      
-        if (!allowedParentRoles || !parentId) {
-          return res.status(400).json({ error: 'A valid parent user is required' });
-        }
-      
-        const parentResult = await db.query(
-          'SELECT id, role FROM users WHERE id = $1 AND role = ANY($2)',
-          [parentId, allowedParentRoles]
-        );
-        
-        if (parentResult.rows.length === 0) {
-          return res.status(400).json({ error: \\\A valid parent role (${allowedParentRoles.join(' or ')}) is required for this user\\\ });
-        }
-        validParentId = parentId;
-      }
-      else if (req.user.role === 'SS') {
-        if (role === 'DISTRIBUTOR') {
-          validParentId = req.user.id;
-        } else if (role === 'RETAILER') {
-          if (!parentId) return res.status(400).json({ error: 'Parent distributor is required' });
-          const parentResult = await db.query('SELECT id, parent_id FROM users WHERE id = $1 AND role = $2', [parentId, 'DISTRIBUTOR']);
-          const parent = parentResult.rows[0];
-          if (!parent || parent.parent_id !== req.user.id) {
-            return res.status(403).json({ error: 'Invalid parent distributor' });
-          }
-          validParentId = parentId;
-        }
-      }
-      else if (req.user.role === 'DISTRIBUTOR') {
-        if (role === 'RETAILER') validParentId = req.user.id;
-      };
+content = content.replace(
+  'const discount = billForm.discount || 0\n  const grandTotal = subtotal - discount + gst',
+  'const discountPercent = billForm.discount || 0\n  const discountAmount = (subtotal * discountPercent) / 100\n  const grandTotal = subtotal - discountAmount + gst'
+);
 
-const rgx = /let validParentId = parentId;[\s\S]*?if \(req\.user\.role === 'DISTRIBUTOR'\) validParentId = req\.user\.id;/;
-if (rgx.test(content)) {
-   fs.writeFileSync('server/routes/users.js', content.replace(rgx, replacement));
-   console.log('Successfully replaced via regex');
-} else {
-   console.log('Could not match target at all.');
-}
+content = content.replace(
+  'discount: parseFloat(discount)',
+  'discount: parseFloat(discountAmount.toFixed(2))'
+);
+
+content = content.replace(
+  '<span className="text-dark-muted">Discount</span>',
+  '<span className="text-dark-muted">Discount (%)</span>'
+);
+
+// Edit form
+content = content.replace(
+  'discount: parseFloat(editForm.discount) || 0',
+  'discount: parseFloat(((calculateSubtotal() * (parseFloat(editForm.discount) || 0)) / 100).toFixed(2))'
+);
+
+content = content.replace(
+  'Discount (?)',
+  'Discount (%)'
+);
+
+// When loading edit form, we must convert absolute discount back to percent
+// The code says: discount: Number(bill.discount || 0)
+// To convert it to percent: 
+// subtotal of bill = bill.subtotal or sum of items
+// wait, we can just replace the initialization:
+content = content.replace(
+  'discount: Number(bill.discount || 0),',
+  'discount: (Number(bill.discount || 0) / (items.reduce((s,i) => s + (Number(i.quantity||1)*Number(i.rate||0)), 0) || 1) * 100).toFixed(2),'
+);
+
+fs.writeFileSync('src/pages/admin/AdminBilling.jsx', content);
+console.log('Done');
