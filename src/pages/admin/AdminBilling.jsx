@@ -252,7 +252,7 @@ const handleUpdateBill = async () => {
           />
           <div>
             <h2 className="text-2xl font-bold text-white">Billing - Admin to SS</h2>
-            <p className="text-dark-muted text-sm">Create bills for Super Stores and automatically transfer stock</p>
+            <p className="text-dark-muted text-sm">Create bills for any user and automatically transfer stock</p>
           </div>
         </div>
         <button onClick={() => setShowCreateBill(true)} className="btn-primary flex items-center gap-2">

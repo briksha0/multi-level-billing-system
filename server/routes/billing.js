@@ -11,7 +11,7 @@ async function validateBuyer(sellerId, buyerId, sellerRole) {
   if (sellerRole === 'ADMIN') {
     const result = await db.query('SELECT role FROM users WHERE id = $1', [buyerId]);
     const buyer = result.rows[0];
-    return buyer && buyer.role === 'SS';
+    return buyer && ['SS', 'DISTRIBUTOR', 'RETAILER'].includes(buyer.role);
   }
   if (sellerRole === 'SS') {
     const result = await db.query('SELECT id, parent_id, role FROM users WHERE id = $1', [buyerId]);
@@ -112,9 +112,14 @@ async function resolveBillType(user, buyerId) {
   if (user.role === 'ADMIN') {
     if (!buyerId) return { status: 400, error: 'Buyer is required' };
     if (!(await validateBuyer(user.id, buyerId, user.role))) {
-      return { status: 403, error: 'Admin can only bill to Super Stores' };
+      return { status: 403, error: 'Admin can only bill to users within the hierarchy' };
     }
-    return { billType: 'ADMIN_TO_SS' };
+    const buyerResult = await db.query('SELECT role FROM users WHERE id = $1', [buyerId]);
+    const buyerRole = buyerResult.rows[0].role;
+    let billType = 'ADMIN_TO_SS';
+    if (buyerRole === 'DISTRIBUTOR') billType = 'ADMIN_TO_DIST';
+    if (buyerRole === 'RETAILER') billType = 'ADMIN_TO_RETAIL';
+    return { billType };
   }
   if (user.role === 'SS') {
     if (!buyerId) return { status: 400, error: 'Buyer is required' };
@@ -166,6 +171,8 @@ async function computeBillTotals(actualBillType, items, discount, paidAmount) {
     let defaultRate = 0;
     switch (actualBillType) {
       case 'ADMIN_TO_SS': defaultRate = product.ss_price; break;
+      case 'ADMIN_TO_DIST': defaultRate = product.distributor_price; break;
+      case 'ADMIN_TO_RETAIL': defaultRate = product.retail_price; break;
       case 'SS_TO_DIST': defaultRate = product.distributor_price; break;
       case 'SS_TO_RETAIL':
       case 'DIST_TO_RETAIL': defaultRate = product.retail_price; break;
@@ -327,13 +334,13 @@ router.post('/', async (req, res) => {
         }
       }
       console.error('Bill creation error:', err);
-      return res.status(500).json({ error: 'Failed to create bill and save GST records' });
+      return res.status(500).json({ error: 'Failed to create bill: ' + err.message + ' | Stack: ' + err.stack });
     } finally {
       client.release();
     }
   } catch (err) {
     console.error('Bill creation error:', err);
-    return res.status(500).json({ error: 'Failed to create bill and save GST records' });
+    return res.status(500).json({ error: 'Failed to create bill: ' + err.message + ' | Stack: ' + err.stack });
   }
 });
 
