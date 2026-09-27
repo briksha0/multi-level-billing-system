@@ -251,24 +251,30 @@ router.post('/', async (req, res) => {
     // PostgreSQL Transaction Handling
     // ==========================================
     const client = await db.connect();
+    
     let transactionStarted = false;
     try {
       await client.query('BEGIN');
       transactionStarted = true;
 
+     // Generate a guaranteed unique bill number with date and random alphanumeric suffix
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const billNumber = `BILL-${dateStr}-${randomSuffix}`; // e.g. BILL-20260927-4K9X
+          
       // 1. Create bill header with subtotal, discount, gst, and grand total
       const billResult = await client.query(`
-      INSERT INTO bills (bill_number, bill_date, seller_id, buyer_id, customer_name, bill_type, subtotal, discount, gst, grand_total, paid_amount, due_amount, payment_status, payment_method, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-      RETURNING id
-    `, [
+        INSERT INTO bills (bill_number, bill_date, seller_id, buyer_id, customer_name, bill_type, subtotal, discount, gst, grand_total, paid_amount, due_amount, payment_status, payment_method, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING id
+      `, [
         billNumber, todayStr, req.user.id, buyerId || null, customerName || null,
         actualBillType, subtotal, discountAmount, totalGst, grandTotal,
         finalPaid, dueAmount, paymentStatus, paymentMethod, req.user.id
       ]);
-
+      
       const billId = billResult.rows[0].id;
-
+      
       // 2. Insert bill items with explicit item-level GST and amount records
       for (const item of billItems) {
         await client.query(

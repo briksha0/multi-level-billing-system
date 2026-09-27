@@ -192,29 +192,32 @@ const handleUpdateBill = async () => {
   const discountAmount = (subtotal * discountPercent) / 100
   const grandTotal = subtotal - discountAmount + gst
   const due = grandTotal - (billForm.paidAmount || 0)
-
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const handleCreateBill = async () => {
-    if (!billForm.buyerId || billForm.items.length === 0) return
-    try {
-      await createBill({
-        sellerId: user?.id || 1,
-        buyerId: parseInt(billForm.buyerId, 10),
-        billType: 'ADMIN_TO_SS',
-        discount: parseFloat(discountAmount.toFixed(2)),
-        gst: parseFloat(gst.toFixed(2)),
-        paidAmount: parseFloat(billForm.paidAmount) || 0,
-        paymentMethod: billForm.paymentMethod,
-      }, billForm.items.map(i => ({ productId: i.productId, quantity: i.quantity, rate: i.rate })))
+  if (!billForm.buyerId || billForm.items.length === 0 || isSubmitting) return
+  try {
+    setIsSubmitting(true)
+    await createBill({
+      sellerId: user?.id || 1,
+      buyerId: parseInt(billForm.buyerId, 10),
+      billType: 'ADMIN_TO_USER',
+      discount: parseFloat(discountAmount.toFixed(2)),
+      gst: parseFloat(gst.toFixed(2)),
+      paidAmount: parseFloat(billForm.paidAmount) || 0,
+      paymentMethod: billForm.paymentMethod,
+    }, billForm.items.map(i => ({ productId: i.productId, quantity: i.quantity, rate: i.rate })))
 
-      const updatedBills = await api.getBills('sales')
-      setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
+    const updatedBills = await api.getBills('sales')
+    setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
 
-      setBillForm({ buyerId: '', items: [], discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer' })
-      setShowCreateBill(false)
-    } catch (err) {
-      alert(err.message || 'Failed to create bill')
-    }
+    setBillForm({ buyerId: '', items: [], discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer' })
+    setShowCreateBill(false)
+  } catch (err) {
+    alert(err.message || 'Failed to create bill')
+  } finally {
+    setIsSubmitting(false)
   }
+}
 
   const handleTogglePaymentStatus = async (bill) => {
     const isCurrentlyPaid = (bill.payment_status || bill.paymentStatus) === 'PAID';
@@ -487,9 +490,28 @@ const handleUpdateBill = async () => {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowCreateBill(false)} className="flex-1 btn-secondary">Cancel</button>
-              <button onClick={handleCreateBill} disabled={!billForm.buyerId || billForm.items.length === 0} className="flex-1 btn-primary disabled:opacity-50">Create Bill</button>
-            </div>
+          <button 
+            onClick={() => setShowCreateBill(false)} 
+            disabled={isSubmitting} 
+            className="flex-1 btn-secondary disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={handleCreateBill} 
+            disabled={!billForm.buyerId || billForm.items.length === 0 || isSubmitting} 
+            className="flex-1 btn-primary disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                Creating Bill...
+              </>
+            ) : (
+              'Create Bill'
+            )}
+          </button>
+        </div>
           </div>
         </div>
       )}
