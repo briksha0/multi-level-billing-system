@@ -33,24 +33,36 @@ async function validateBuyer(sellerId, buyerId, sellerRole) {
   return false;
 }
 
-// Get bills (sales or purchases)
+// Get bills (sales or purchases) - Admin sees all network bills, others see their own
 router.get('/', async (req, res) => {
   try {
     const { type = 'sales', limit = 100 } = req.query;
     const userId = req.user.id;
+    const userRole = req.user.role;
     const limitInt = parseInt(limit, 10);
 
     let result;
     if (type === 'sales') {
-      result = await db.query(`
+      let query = `
         SELECT b.*, 
-          buyer.name as buyer_name, buyer.username as buyer_username, buyer.role as buyer_role
+          buyer.name as buyer_name, buyer.username as buyer_username, buyer.role as buyer_role,
+          seller.name as seller_name, seller.username as seller_username, seller.role as seller_role
         FROM bills b
         LEFT JOIN users buyer ON b.buyer_id = buyer.id
-        WHERE b.seller_id = $1
-        ORDER BY b.created_at DESC
-        LIMIT $2
-      `, [userId, limitInt]);
+        LEFT JOIN users seller ON b.seller_id = seller.id
+      `;
+      let params = [];
+
+      // If user is NOT an admin, restrict bills to those where they are the seller[cite: 2]
+      if (userRole !== 'ADMIN') {
+        query += ` WHERE b.seller_id = $1`;
+        params.push(userId);
+      }
+
+      query += ` ORDER BY b.created_at DESC LIMIT $${params.length + 1}`;
+      params.push(limitInt);
+
+      result = await db.query(query, params);
     } else {
       result = await db.query(`
         SELECT b.*,
@@ -183,7 +195,7 @@ async function computeBillTotals(actualBillType, items, discount, paidAmount) {
     const rate = Number(item.rate || defaultRate);
     const quantity = Number(item.quantity);
     const itemSubtotal = quantity * rate;
-    const gstRate = item.gst !== undefined ? Number(item.gst) : 18; // Default to 18% GST
+    const gstRate = item.gst !== undefined ? Number(item.gst) : 18;
     const itemGst = itemSubtotal * (gstRate / 100);
 
     subtotal += itemSubtotal;
@@ -209,43 +221,31 @@ async function computeBillTotals(actualBillType, items, discount, paidAmount) {
   return { subtotal, totalGst, billItems, discountAmount, grandTotal, finalPaid, dueAmount, paymentStatus };
 }
 
-// Generate the next bill number for today's date
-async function generateBillNumber(todayStr) {
-  const countResult = await db.query('SELECT COUNT(*) as count FROM bills WHERE bill_date = $1', [todayStr]);
-  return `BILL-${todayStr.replace(/-/g, '')}-${String(parseInt(countResult.rows[0].count, 10) + 1).padStart(4, '0')}`;
-}
-
 // Create bill
 router.post('/', async (req, res) => {
   const { buyerId, customerName, items, discount = 0, paidAmount = 0, paymentMethod = 'Cash' } = req.body;
 
-  // ---- All validation happens BEFORE a pooled connection is acquired ----
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'At least one item is required' });
   }
 
   try {
-    // Validate bill type and buyer
     const resolved = await resolveBillType(req.user, buyerId);
     if (resolved.error) {
       return res.status(resolved.status).json({ error: resolved.error });
     }
     const actualBillType = resolved.billType;
 
-    // Validate stock availability
     const stockCheck = await validateStockAvailability(req.user.id, items);
     if (stockCheck.error) {
       return res.status(400).json({ error: stockCheck.error });
     }
 
-    // Calculate subtotal, GST, and totals
     const {
       subtotal, totalGst, billItems, discountAmount, grandTotal, finalPaid, dueAmount, paymentStatus
     } = await computeBillTotals(actualBillType, items, discount, paidAmount);
 
-    // Generate bill number
     const todayStr = new Date().toISOString().split('T')[0];
-    const billNumber = await generateBillNumber(todayStr);
 
     // ==========================================
     // PostgreSQL Transaction Handling
@@ -257,12 +257,12 @@ router.post('/', async (req, res) => {
       await client.query('BEGIN');
       transactionStarted = true;
 
-     // Generate a guaranteed unique bill number with date and random alphanumeric suffix
+      // Generate guaranteed unique bill number with date and random suffix to avoid collisions[cite: 2]
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const billNumber = `BILL-${dateStr}-${randomSuffix}`; // e.g. BILL-20260927-4K9X
+      const billNumber = `BILL-${dateStr}-${randomSuffix}`;
           
-      // 1. Create bill header with subtotal, discount, gst, and grand total
+      // 1. Create bill header[cite: 2]
       const billResult = await client.query(`
         INSERT INTO bills (bill_number, bill_date, seller_id, buyer_id, customer_name, bill_type, subtotal, discount, gst, grand_total, paid_amount, due_amount, payment_status, payment_method, created_by)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
@@ -275,7 +275,7 @@ router.post('/', async (req, res) => {
       
       const billId = billResult.rows[0].id;
       
-      // 2. Insert bill items with explicit item-level GST and amount records
+      // 2. Insert bill items[cite: 2]
       for (const item of billItems) {
         await client.query(
           'INSERT INTO bill_items (bill_id, product_id, quantity, rate, gst, amount) VALUES ($1, $2, $3, $4, $5, $6)',
@@ -283,7 +283,7 @@ router.post('/', async (req, res) => {
         );
       }
 
-      // 3. Update stock - deduct from seller
+      // 3. Deduct stock from seller[cite: 2]
       for (const item of billItems) {
         await client.query(
           'UPDATE stock SET quantity = quantity - $1 WHERE user_id = $2 AND product_id = $3',
@@ -291,17 +291,17 @@ router.post('/', async (req, res) => {
         );
       }
 
-      // 4. Update stock - add to buyer (if not retail to customer)
+      // 4. Add stock to buyer[cite: 2]
       if (buyerId && actualBillType !== 'RETAIL_TO_CUSTOMER') {
         for (const item of billItems) {
           await client.query(`
-          INSERT INTO stock (user_id, product_id, quantity)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (user_id, product_id) DO UPDATE SET quantity = stock.quantity + $4
-        `, [buyerId, item.productId, item.quantity, item.quantity]);
+            INSERT INTO stock (user_id, product_id, quantity)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, product_id) DO UPDATE SET quantity = stock.quantity + $4
+          `, [buyerId, item.productId, item.quantity, item.quantity]);
         }
 
-        // 5. Create stock transactions
+        // 5. Create stock transactions[cite: 2]
         for (const item of billItems) {
           await client.query(
             'INSERT INTO stock_transactions (date, from_id, to_id, product_id, quantity, type, bill_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
@@ -310,7 +310,7 @@ router.post('/', async (req, res) => {
         }
       }
 
-      // 6. Create payment record if paid
+      // 6. Create payment record if paid[cite: 2]
       if (finalPaid > 0) {
         await client.query(
           'INSERT INTO payments (bill_id, amount, method, date) VALUES ($1, $2, $3, $4)',
@@ -328,7 +328,7 @@ router.post('/', async (req, res) => {
         subtotal,
         gst: totalGst,
         grandTotal,
-        message: 'Bill created successfully with subtotal and GST saved to database'
+        message: 'Bill created successfully'
       });
 
     } catch (err) {
@@ -340,13 +340,13 @@ router.post('/', async (req, res) => {
         }
       }
       console.error('Bill creation error:', err);
-      return res.status(500).json({ error: 'Failed to create bill: ' + err.message + ' | Stack: ' + err.stack });
+      return res.status(500).json({ error: 'Failed to create bill: ' + err.message });
     } finally {
       client.release();
     }
   } catch (err) {
     console.error('Bill creation error:', err);
-    return res.status(500).json({ error: 'Failed to create bill: ' + err.message + ' | Stack: ' + err.stack });
+    return res.status(500).json({ error: 'Failed to create bill: ' + err.message });
   }
 });
 
@@ -403,7 +403,7 @@ router.post('/:billId/payments', async (req, res) => {
   }
 });
 
-// Set a bill's payment status from the billing screen.
+// Set a bill's payment status
 router.patch('/:billId/payment-status', async (req, res) => {
   const client = await db.connect();
   try {

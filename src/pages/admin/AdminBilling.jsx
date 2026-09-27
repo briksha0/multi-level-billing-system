@@ -13,7 +13,11 @@ export default function AdminBilling() {
   const [showCreateBill, setShowCreateBill] = useState(false)
   const [selectedBill, setSelectedBill] = useState(null)
   const [currentBillItems, setCurrentBillItems] = useState([])
-  // Replace `ssUsers` with a broader list or all non-admin users
+  
+  // Filter States
+  const [selectedUserFilter, setSelectedUserFilter] = useState('ALL')
+  const [selectedSellerFilter, setSelectedSellerFilter] = useState('ALL')
+
   const allUsers = Array.isArray(data?.users) ? data.users : []
   const billableUsers = allUsers.filter(u => u.role !== 'ADMIN')
 
@@ -24,74 +28,74 @@ export default function AdminBilling() {
     paidAmount: 0,
     paymentMethod: 'Bank Transfer',
   })
+  const [selectedBuyerRole, setSelectedBuyerRole] = useState('')
   const [newItem, setNewItem] = useState({ productId: 1, quantity: 1 })
 
+  // Edit modal states
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingBill, setEditingBill] = useState(null)
+  const [editForm, setEditForm] = useState({ discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer', items: [] })
 
-  // Add items array and product list reference into editForm state
-const [showEditModal, setShowEditModal] = useState(false)
-const [editingBill, setEditingBill] = useState(null)
-const [editForm, setEditForm] = useState({ discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer', items: [] })
-
-// Handler to open the edit modal and fetch its items
-const handleOpenEdit = async (bill) => {
-  setEditingBill(bill)
-  try {
-    const billDetail = await api.getBill(bill.id)
-    const items = Array.isArray(billDetail.items) ? billDetail.items : []
-    
-    setEditForm({
-      discount: (Number(bill.discount || 0) / (items.reduce((s,i) => s + (Number(i.quantity||1)*Number(i.rate||0)), 0) || 1) * 100).toFixed(2),
-      paidAmount: Number(bill.paidAmount ?? bill.paid_amount ?? 0),
-      paymentMethod: bill.paymentMethod || bill.payment_method || 'Bank Transfer',
-      items: items.map(i => ({
-        productId: i.productId || i.product_id,
-        productName: i.productName || i.product_name || 'Product',
-        quantity: Number(i.quantity || 1),
-        rate: Number(i.rate || 0),
-        gst: Number(i.gst || 18)
-      }))
-    })
-    setShowEditModal(true)
-  } catch (err) {
-    console.error('Failed to load bill items for editing:', err)
-    alert('Failed to load bill items')
+  // Handler to open the edit modal and fetch its items
+  const handleOpenEdit = async (bill) => {
+    setEditingBill(bill)
+    try {
+      const billDetail = await api.getBill(bill.id)
+      const items = Array.isArray(billDetail.items) ? billDetail.items : []
+      
+      setEditForm({
+        discount: (Number(bill.discount || 0) / (items.reduce((s,i) => s + (Number(i.quantity||1)*Number(i.rate||0)), 0) || 1) * 100).toFixed(2),
+        paidAmount: Number(bill.paidAmount ?? bill.paid_amount ?? 0),
+        paymentMethod: bill.paymentMethod || bill.payment_method || 'Bank Transfer',
+        items: items.map(i => ({
+          productId: i.productId || i.product_id,
+          productName: i.productName || i.product_name || 'Product',
+          quantity: Number(i.quantity || 1),
+          rate: Number(i.rate || 0),
+          gst: Number(i.gst || 18)
+        }))
+      })
+      setShowEditModal(true)
+    } catch (err) {
+      console.error('Failed to load bill items for editing:', err)
+      alert('Failed to load bill items')
+    }
   }
-}
 
-// Handler to modify item quantity inside the edit modal
-const handleEditItemQuantityChange = (productId, newQty) => {
-  const qty = parseInt(newQty, 10)
-  if (isNaN(qty) || qty < 0) return
-  setEditForm(f => ({
-    ...f,
-    items: f.items.map(i => i.productId === productId ? { ...i, quantity: qty } : i)
-  }))
-}
-
-// Handler to submit bill updates and stock adjustments
-const handleUpdateBill = async () => {
-  if (!editingBill) return
-  try {
-    await api.updateBill(editingBill.id, {
-      discount: parseFloat(((editForm.items.reduce((sum, item) => sum + item.quantity * item.rate, 0) * (parseFloat(editForm.discount) || 0)) / 100).toFixed(2)),
-      paidAmount: parseFloat(editForm.paidAmount) || 0,
-      paymentMethod: editForm.paymentMethod,
-      items: editForm.items.map(i => ({
-        productId: i.productId,
-        quantity: i.quantity,
-        rate: i.rate,
-        gst: i.gst
-      }))
-    })
-
-    const updatedBills = await api.getBills('sales')
-    setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
-    setShowEditModal(false)
-    setEditingBill(null)
-  } catch (err) {
-    alert(err.message || 'Failed to update bill')
+  // Handler to modify item quantity inside the edit modal
+  const handleEditItemQuantityChange = (productId, newQty) => {
+    const qty = parseInt(newQty, 10)
+    if (isNaN(qty) || qty < 0) return
+    setEditForm(f => ({
+      ...f,
+      items: f.items.map(i => i.productId === productId ? { ...i, quantity: qty } : i)
+    }))
   }
-}
+
+  // Handler to submit bill updates and stock adjustments
+  const handleUpdateBill = async () => {
+    if (!editingBill) return
+    try {
+      await api.updateBill(editingBill.id, {
+        discount: parseFloat(((editForm.items.reduce((sum, item) => sum + item.quantity * item.rate, 0) * (parseFloat(editForm.discount) || 0)) / 100).toFixed(2)),
+        paidAmount: parseFloat(editForm.paidAmount) || 0,
+        paymentMethod: editForm.paymentMethod,
+        items: editForm.items.map(i => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          rate: i.rate,
+          gst: i.gst
+        }))
+      })
+
+      const updatedBills = await api.getBills('sales')
+      setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
+      setShowEditModal(false)
+      setEditingBill(null)
+    } catch (err) {
+      alert(err.message || 'Failed to update bill')
+    }
+  }
 
   // Handler to delete a bill
   const handleDeleteBill = async (billId) => {
@@ -117,7 +121,7 @@ const handleUpdateBill = async () => {
   useEffect(() => {
     async function fetchBills() {
       try {
-        const bills = await api.getBills('sales')
+        const bills = await api.getBills('sales') // Fetches network-wide bills for Admin[cite: 2]
         setSalesBills(Array.isArray(bills) ? bills : [])
       } catch (err) {
         console.error('Failed to fetch sales bills:', err)
@@ -145,16 +149,34 @@ const handleUpdateBill = async () => {
     fetchItems()
   }, [selectedBill])
 
+  // Handle buyer change to track role and price tier
+  const handleBuyerChange = (e) => {
+    const buyerId = e.target.value
+    const buyer = allUsers.find(u => Number(u.id) === Number(buyerId))
+    setBillForm(f => ({ ...f, buyerId }))
+    setSelectedBuyerRole(buyer?.role || '')
+  }
+
   const addItem = () => {
     const product = getProductById(newItem.productId)
     if (!product) return
-    const rate = product.ss_price || product.salePrice || 0
+
+    // Dynamic price selection based on buyer role[cite: 1, 2]
+    let rate = product.mrp || 0
+    if (selectedBuyerRole === 'SS') {
+      rate = product.ss_price || product.salePrice || product.mrp || 0
+    } else if (selectedBuyerRole === 'DISTRIBUTOR') {
+      rate = product.distributor_price || product.ss_price || product.mrp || 0
+    } else if (selectedBuyerRole === 'RETAILER') {
+      rate = product.retail_price || product.mrp || 0
+    }
+
     const exists = billForm.items.find(i => i.productId === newItem.productId)
     if (exists) {
       setBillForm(f => ({
         ...f,
         items: f.items.map(i => i.productId === newItem.productId
-          ? { ...i, quantity: i.quantity + parseInt(newItem.quantity, 10) }
+          ? { ...i, quantity: i.quantity + parseInt(newItem.quantity, 10), rate }
           : i
         )
       }))
@@ -192,32 +214,35 @@ const handleUpdateBill = async () => {
   const discountAmount = (subtotal * discountPercent) / 100
   const grandTotal = subtotal - discountAmount + gst
   const due = grandTotal - (billForm.paidAmount || 0)
+
   const [isSubmitting, setIsSubmitting] = useState(false)
+
   const handleCreateBill = async () => {
-  if (!billForm.buyerId || billForm.items.length === 0 || isSubmitting) return
-  try {
-    setIsSubmitting(true)
-    await createBill({
-      sellerId: user?.id || 1,
-      buyerId: parseInt(billForm.buyerId, 10),
-      billType: 'ADMIN_TO_USER',
-      discount: parseFloat(discountAmount.toFixed(2)),
-      gst: parseFloat(gst.toFixed(2)),
-      paidAmount: parseFloat(billForm.paidAmount) || 0,
-      paymentMethod: billForm.paymentMethod,
-    }, billForm.items.map(i => ({ productId: i.productId, quantity: i.quantity, rate: i.rate })))
+    if (!billForm.buyerId || billForm.items.length === 0 || isSubmitting) return
+    try {
+      setIsSubmitting(true)
+      await createBill({
+        sellerId: user?.id || 1,
+        buyerId: parseInt(billForm.buyerId, 10),
+        billType: 'ADMIN_TO_USER',
+        discount: parseFloat(discountAmount.toFixed(2)),
+        gst: parseFloat(gst.toFixed(2)),
+        paidAmount: parseFloat(billForm.paidAmount) || 0,
+        paymentMethod: billForm.paymentMethod,
+      }, billForm.items.map(i => ({ productId: i.productId, quantity: i.quantity, rate: i.rate })))
 
-    const updatedBills = await api.getBills('sales')
-    setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
+      const updatedBills = await api.getBills('sales')
+      setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
 
-    setBillForm({ buyerId: '', items: [], discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer' })
-    setShowCreateBill(false)
-  } catch (err) {
-    alert(err.message || 'Failed to create bill')
-  } finally {
-    setIsSubmitting(false)
+      setBillForm({ buyerId: '', items: [], discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer' })
+      setSelectedBuyerRole('')
+      setShowCreateBill(false)
+    } catch (err) {
+      alert(err.message || 'Failed to create bill')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
-}
 
   const handleTogglePaymentStatus = async (bill) => {
     const isCurrentlyPaid = (bill.payment_status || bill.paymentStatus) === 'PAID';
@@ -244,6 +269,29 @@ const handleUpdateBill = async () => {
     }
   };
 
+  // Filter bills based on selected User Account and/or Seller Account
+  const filteredBills = salesBills.filter(bill => {
+    const sellerId = Number(bill.sellerId || bill.seller_id)
+    const buyerId = Number(bill.buyerId || bill.buyer_id)
+    const sellerUser = allUsers.find(u => Number(u.id) === sellerId)
+
+    // Quick Admin Only check
+    if (selectedSellerFilter === 'ADMIN_ONLY') {
+      const isSellerAdmin = sellerUser?.role === 'ADMIN' || !sellerId || sellerId === 1;
+      if (!isSellerAdmin) return false
+    } else if (selectedSellerFilter !== 'ALL') {
+      if (sellerId !== Number(selectedSellerFilter)) return false
+    }
+
+    // Specific User Account filter check
+    if (selectedUserFilter !== 'ALL') {
+      const targetId = Number(selectedUserFilter)
+      if (sellerId !== targetId && buyerId !== targetId) return false
+    }
+
+    return true
+  })
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -254,14 +302,64 @@ const handleUpdateBill = async () => {
             className="h-12 w-auto rounded-lg border border-dark-border bg-white/5 p-1 object-contain shadow-sm"
           />
           <div>
-            <h2 className="text-2xl font-bold text-white">Billing - Admin to SS</h2>
-            <p className="text-dark-muted text-sm">Create bills for any user and automatically transfer stock</p>
+            <h2 className="text-2xl font-bold text-white">Billing - Admin Panel</h2>
+            <p className="text-dark-muted text-sm">View network-wide billing records from Admin, SS, and Distributors</p>
           </div>
         </div>
         <button onClick={() => setShowCreateBill(true)} className="btn-primary flex items-center gap-2">
           <Plus size={18} />
           Create Bill
         </button>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="bg-dark-card border border-dark-border rounded-2xl p-4 flex flex-wrap items-center gap-4">
+        <div className="text-xs font-bold uppercase tracking-wider text-dark-muted">Filters:</div>
+        
+        {/* Quick Admin Only Toggle Button */}
+        <button
+          onClick={() => {
+            const adminUser = allUsers.find(u => u.role === 'ADMIN');
+            if (adminUser) {
+              setSelectedSellerFilter(adminUser.id.toString());
+            } else {
+              setSelectedSellerFilter('ADMIN_ONLY');
+            }
+          }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+            selectedSellerFilter === 'ADMIN_ONLY' || (selectedSellerFilter !== 'ALL' && allUsers.find(u => Number(u.id) === Number(selectedSellerFilter))?.role === 'ADMIN')
+              ? 'bg-brand-500/20 text-brand-400 border-brand-500/50'
+              : 'bg-dark-bg text-dark-muted border-dark-border hover:text-white'
+          }`}
+        >
+          Admin Bills Only
+        </button>
+
+        {/* Seller Account Filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-dark-muted">Seller:</span>
+          <select
+            value={selectedSellerFilter}
+            onChange={(e) => setSelectedSellerFilter(e.target.value)}
+            className="input-field text-xs py-1.5 px-3 min-w-[200px]"
+          >
+            <option value="ALL">All Sellers</option>
+            {allUsers.map(u => (
+              <option key={u.id} value={u.id}>
+                {u.name} {u.role === 'ADMIN' ? '(Admin)' : `(${u.role})`}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {(selectedSellerFilter !== 'ALL' || selectedUserFilter !== 'ALL') && (
+          <button
+            onClick={() => { setSelectedSellerFilter('ALL'); setSelectedUserFilter('ALL'); }}
+            className="text-xs text-brand-400 hover:underline ml-auto"
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Bills List */}
@@ -272,7 +370,7 @@ const handleUpdateBill = async () => {
           </div>
           <div>
             <div className="font-semibold text-white">Sales Bills</div>
-            <div className="text-xs text-dark-muted">{salesBills.length} bills issued</div>
+            <div className="text-xs text-dark-muted">{filteredBills.length} of {salesBills.length} bills displayed</div>
           </div>
         </div>
 
@@ -282,9 +380,8 @@ const handleUpdateBill = async () => {
               <tr className="bg-dark-bg/50">
                 <th className="table-header px-6 py-4">#</th>
                 <th className="table-header px-6 py-4">Billing Date</th>
+                <th className="table-header px-6 py-4">Seller Name</th>
                 <th className="table-header px-6 py-4">Buyer Name</th>
-                <th className="table-header px-6 py-4 text-right">Subtotal</th>
-                <th className="table-header px-6 py-4 text-right">GST (18%)</th>
                 <th className="table-header px-6 py-4 text-right">Amount (₹)</th>
                 <th className="table-header px-6 py-4 text-right">Paid Amount</th>
                 <th className="table-header px-6 py-4 text-right">Remaining Due</th>
@@ -293,9 +390,13 @@ const handleUpdateBill = async () => {
               </tr>
             </thead>
             <tbody>
-              {salesBills.map((bill, index) => {
-                const buyer = bill.buyerId ? getUserById(bill.buyerId) : null
+              {filteredBills.map((bill, index) => {
+                const seller = (bill.sellerId || bill.seller_id) ? getUserById(bill.sellerId || bill.seller_id) : null
+                const sellerName = seller?.name || bill.sellerName || bill.seller_name || 'Admin'
+
+                const buyer = (bill.buyerId || bill.buyer_id) ? getUserById(bill.buyerId || bill.buyer_id) : null
                 const buyerName = buyer?.name || bill.buyerName || bill.buyer_name || 'Partner / SS'
+
                 const formattedDate = bill.billDate || bill.created_at || bill.date ? new Date(bill.billDate || bill.created_at || bill.date).toLocaleDateString() : '-'
                 
                 const subtotalValue = Number(bill.subtotal || 0)
@@ -313,9 +414,8 @@ const handleUpdateBill = async () => {
                   <tr key={bill.id || index} className="table-row">
                     <td className="px-6 py-4 font-mono text-sm text-brand-400 font-medium">{index + 1}</td>
                     <td className="px-6 py-4 text-dark-muted font-medium">{formattedDate}</td>
+                    <td className="px-6 py-4 text-accent-400 font-semibold">{sellerName}</td>
                     <td className="px-6 py-4 text-white font-semibold">{buyerName}</td>
-                    <td className="px-6 py-4 text-right text-dark-muted">₹{subtotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-dark-muted">₹{gstValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-6 py-4 text-right text-white font-bold">₹{totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-6 py-4 text-right text-emerald-400 font-medium">₹{paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-6 py-4 text-right text-amber-400 font-medium">₹{remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -356,8 +456,8 @@ const handleUpdateBill = async () => {
                   </tr>
                 )
               })}
-              {salesBills.length === 0 && (
-                <tr><td colSpan="10" className="text-center py-12 text-dark-muted">No bills created yet</td></tr>
+              {filteredBills.length === 0 && (
+                <tr><td colSpan="9" className="text-center py-12 text-dark-muted">No bills found matching your filter criteria</td></tr>
               )}
             </tbody>
           </table>
@@ -375,20 +475,21 @@ const handleUpdateBill = async () => {
 
             <div className="space-y-4">
               <div>
-                  <label className="block text-sm text-dark-muted mb-2">Select Buyer *</label>
-                  <select
-                    value={billForm.buyerId}
-                    onChange={(e) => setBillForm(f => ({ ...f, buyerId: e.target.value }))}
-                    className="input-field"
-                  >
-                    <option value="">-- Select Buyer Account --</option>
-                    {billableUsers.map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} ({u.role})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <label className="block text-sm text-dark-muted mb-2">Select Buyer *</label>
+                <select
+                  value={billForm.buyerId}
+                  onChange={handleBuyerChange}
+                  className="input-field"
+                >
+                  <option value="">-- Select Buyer Account --</option>
+                  {billableUsers.map(u => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Add Items */}
               <div className="p-4 rounded-xl bg-dark-bg border border-dark-border">
                 <div className="text-sm font-medium text-white mb-3 flex items-center gap-2">
@@ -490,116 +591,115 @@ const handleUpdateBill = async () => {
             </div>
 
             <div className="flex gap-3 mt-6">
-          <button 
-            onClick={() => setShowCreateBill(false)} 
-            disabled={isSubmitting} 
-            className="flex-1 btn-secondary disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button 
-            onClick={handleCreateBill} 
-            disabled={!billForm.buyerId || billForm.items.length === 0 || isSubmitting} 
-            className="flex-1 btn-primary disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isSubmitting ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                Creating Bill...
-              </>
-            ) : (
-              'Create Bill'
-            )}
-          </button>
-        </div>
+              <button 
+                onClick={() => setShowCreateBill(false)} 
+                disabled={isSubmitting} 
+                className="flex-1 btn-secondary disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleCreateBill} 
+                disabled={!billForm.buyerId || billForm.items.length === 0 || isSubmitting} 
+                className="flex-1 btn-primary disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    Creating Bill...
+                  </>
+                ) : (
+                  'Create Bill'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* Edit Bill Modal */}
-    {showEditModal && editingBill && (
-  <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-    <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
-      <h3 className="text-xl font-bold text-white mb-2">Edit Bill #{editingBill.billNumber || editingBill.bill_number || editingBill.id}</h3>
-      <p className="text-xs text-dark-muted mb-6">Modify product quantities, payment details, and discounts. Stock levels will adjust automatically.</p>
-      
-      <div className="space-y-5">
-        {/* Editable Bill Items Table */}
-        <div className="rounded-2xl border border-dark-border overflow-hidden bg-dark-bg/40">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-dark-bg text-dark-muted text-[11px] uppercase font-bold tracking-wider border-b border-dark-border">
-                <th className="text-left px-4 py-3">Product Name</th>
-                <th className="text-right px-4 py-3">Rate</th>
-                <th className="text-right px-4 py-3">Quantity</th>
-                <th className="text-right px-4 py-3">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-dark-border/50 text-slate-200">
-              {editForm.items.map(item => (
-                <tr key={item.productId} className="hover:bg-white/[0.01]">
-                  <td className="px-4 py-3 font-semibold text-white">{item.productName}</td>
-                  <td className="px-4 py-3 text-right text-dark-muted">₹{item.rate.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <input
-                      type="number"
-                      value={item.quantity}
-                      onChange={(e) => handleEditItemQuantityChange(item.productId, e.target.value)}
-                      className="w-20 bg-dark-card border border-dark-border rounded px-2 py-1 text-center text-white text-sm font-bold"
-                      min="0"
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-right text-white font-bold">₹{(item.quantity * item.rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {showEditModal && editingBill && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">Edit Bill #{editingBill.billNumber || editingBill.bill_number || editingBill.id}</h3>
+            <p className="text-xs text-dark-muted mb-6">Modify product quantities, payment details, and discounts. Stock levels will adjust automatically.</p>
+            
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-dark-border overflow-hidden bg-dark-bg/40">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-dark-bg text-dark-muted text-[11px] uppercase font-bold tracking-wider border-b border-dark-border">
+                      <th className="text-left px-4 py-3">Product Name</th>
+                      <th className="text-right px-4 py-3">Rate</th>
+                      <th className="text-right px-4 py-3">Quantity</th>
+                      <th className="text-right px-4 py-3">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dark-border/50 text-slate-200">
+                    {editForm.items.map(item => (
+                      <tr key={item.productId} className="hover:bg-white/[0.01]">
+                        <td className="px-4 py-3 font-semibold text-white">{item.productName}</td>
+                        <td className="px-4 py-3 text-right text-dark-muted">₹{item.rate.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => handleEditItemQuantityChange(item.productId, e.target.value)}
+                            className="w-20 bg-dark-card border border-dark-border rounded px-2 py-1 text-center text-white text-sm font-bold"
+                            min="0"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-right text-white font-bold">₹{(item.quantity * item.rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Payment Method</label>
-            <select
-              value={editForm.paymentMethod}
-              onChange={(e) => setEditForm(f => ({ ...f, paymentMethod: e.target.value }))}
-              className="input-field text-sm font-medium"
-            >
-              <option>Cash</option>
-              <option>UPI</option>
-              <option>Bank Transfer</option>
-              <option>Credit</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Paid Amount (₹)</label>
-            <input
-              type="number"
-              value={editForm.paidAmount}
-              onChange={(e) => setEditForm(f => ({ ...f, paidAmount: e.target.value }))}
-              className="input-field text-sm font-medium"
-              min="0"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Discount (₹)</label>
-            <input
-              type="number"
-              value={editForm.discount}
-              onChange={(e) => setEditForm(f => ({ ...f, discount: e.target.value }))}
-              className="input-field text-sm font-medium"
-              min="0"
-            />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Payment Method</label>
+                  <select
+                    value={editForm.paymentMethod}
+                    onChange={(e) => setEditForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                    className="input-field text-sm font-medium"
+                  >
+                    <option>Cash</option>
+                    <option>UPI</option>
+                    <option>Bank Transfer</option>
+                    <option>Credit</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Paid Amount (₹)</label>
+                  <input
+                    type="number"
+                    value={editForm.paidAmount}
+                    onChange={(e) => setEditForm(f => ({ ...f, paidAmount: e.target.value }))}
+                    className="input-field text-sm font-medium"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Discount (₹)</label>
+                  <input
+                    type="number"
+                    value={editForm.discount}
+                    onChange={(e) => setEditForm(f => ({ ...f, discount: e.target.value }))}
+                    className="input-field text-sm font-medium"
+                    min="0"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
+              <button onClick={() => setShowEditModal(false)} className="flex-1 btn-secondary py-3 text-sm font-semibold">Cancel</button>
+              <button onClick={handleUpdateBill} className="flex-1 btn-primary py-3 text-sm font-bold">Save Changes & Recalculate Stock</button>
+            </div>
           </div>
         </div>
-      </div>
-      
-      <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
-        <button onClick={() => setShowEditModal(false)} className="flex-1 btn-secondary py-3 text-sm font-semibold">Cancel</button>
-        <button onClick={handleUpdateBill} className="flex-1 btn-primary py-3 text-sm font-bold">Save Changes & Recalculate Stock</button>
-      </div>
-    </div>
-  </div>
-)}
+      )}
 
       {/* Render modular Billing Receipt A4 Modal */}
       {selectedBill && (
