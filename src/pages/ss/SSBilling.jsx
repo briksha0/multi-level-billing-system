@@ -1,4 +1,4 @@
-// src/pages/admin/AdminBilling.jsx
+// src/pages/ss/SSBilling.jsx
 import { useState, useEffect } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -21,9 +21,17 @@ export default function AdminBilling() {
     paidAmount: 0,
     paymentMethod: 'Bank Transfer',
   })
+  const [selectedBuyerRole, setSelectedBuyerRole] = useState('')
   const [newItem, setNewItem] = useState({ productId: 1, quantity: 1 })
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const ssUsers = data.users.filter(u => u.role === 'DISTRIBUTOR')
+  // Edit modal states
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingBill, setEditingBill] = useState(null)
+  const [editForm, setEditForm] = useState({ discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer', items: [] })
+
+  const allUsers = Array.isArray(data?.users) ? data.users : []
+  const ssUsers = allUsers.filter(u => u.role === 'DISTRIBUTOR' || u.role === 'SS')
 
   // Fetch sales bills safely on load
   useEffect(() => {
@@ -57,16 +65,36 @@ export default function AdminBilling() {
     fetchItems()
   }, [selectedBill])
 
+  // Handle buyer change to track role and price tier
+  const handleBuyerChange = (e) => {
+    const buyerId = e.target.value
+    const buyer = allUsers.find(u => Number(u.id) === Number(buyerId))
+    setBillForm(f => ({ ...f, buyerId }))
+    setSelectedBuyerRole(buyer?.role || '')
+  }
+
   const addItem = () => {
     const product = getProductById(newItem.productId)
     if (!product) return
-    const rate = product.ss_price || product.salePrice || 0
+
+    // Dynamically pick the rate based on the buyer's role
+    let rate = product.mrp || 0
+    if (selectedBuyerRole === 'SS') {
+      rate = product.ss_price || product.salePrice || product.mrp || 0
+    } else if (selectedBuyerRole === 'DISTRIBUTOR') {
+      rate = product.distributor_price || product.ss_price || product.mrp || 0
+    } else if (selectedBuyerRole === 'RETAILER') {
+      rate = product.retail_price || product.mrp || 0
+    } else {
+      rate = product.ss_price || product.salePrice || product.mrp || 0
+    }
+
     const exists = billForm.items.find(i => i.productId === newItem.productId)
     if (exists) {
       setBillForm(f => ({
         ...f,
         items: f.items.map(i => i.productId === newItem.productId
-          ? { ...i, quantity: i.quantity + parseInt(newItem.quantity, 10) }
+          ? { ...i, quantity: i.quantity + parseInt(newItem.quantity, 10), rate }
           : i
         )
       }))
@@ -107,8 +135,9 @@ export default function AdminBilling() {
   const due = grandTotal - (billForm.paidAmount || 0)
 
   const handleCreateBill = async () => {
-    if (!billForm.buyerId || billForm.items.length === 0) return
+    if (!billForm.buyerId || billForm.items.length === 0 || isSubmitting) return
     try {
+      setIsSubmitting(true)
       await createBill({
         sellerId: user?.id || 1,
         buyerId: parseInt(billForm.buyerId, 10),
@@ -123,43 +152,101 @@ export default function AdminBilling() {
       setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
 
       setBillForm({ buyerId: '', items: [], discount: 0, paidAmount: 0, paymentMethod: 'Bank Transfer' })
+      setSelectedBuyerRole('')
       setShowCreateBill(false)
     } catch (err) {
       alert(err.message || 'Failed to create bill')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-// Add this handler function inside your AdminBilling component
-const handleTogglePaymentStatus = async (bill) => {
-  const isCurrentlyPaid = (bill.payment_status || bill.paymentStatus) === 'PAID';
-  const totalAmount = Number(bill.grand_total ?? bill.grandTotal ?? ((bill.subtotal || 0) + (bill.gst || 0)));
-  
-  // If currently PAID, toggle to PENDING (paid_amount = 0). If PENDING/PARTIAL, toggle to PAID (paid_amount = totalAmount)
-  const newPaidAmount = isCurrentlyPaid ? 0 : totalAmount;
-  const paymentMethod = bill.payment_method || 'Bank Transfer';
+  const handleTogglePaymentStatus = async (bill) => {
+    const isCurrentlyPaid = (bill.payment_status || bill.paymentStatus) === 'PAID';
+    const totalAmount = Number(bill.grand_total ?? bill.grandTotal ?? ((bill.subtotal || 0) + (bill.gst || 0)));
+    const paymentMethod = bill.payment_method || 'Bank Transfer';
 
-  try {
-    const response = await fetch(`/api/bills/${bill.id}/payments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
-      },
-      body: JSON.stringify({ 
-        amount: isCurrentlyPaid ? -Number(bill.paid_amount || totalAmount) : totalAmount, 
-        method: paymentMethod 
+    try {
+      const response = await fetch(`/api/bills/${bill.id}/payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('mlb_token')}`
+        },
+        body: JSON.stringify({ 
+          amount: isCurrentlyPaid ? -Number(bill.paid_amount || totalAmount) : totalAmount, 
+          method: paymentMethod 
+        })
+      });
+
+      const updatedBills = await api.getBills('sales');
+      setSalesBills(Array.isArray(updatedBills) ? updatedBills : []);
+    } catch (err) {
+      console.error('Failed to update payment status:', err);
+      alert('Failed to update payment status');
+    }
+  };
+
+  // Handler to open edit modal and fetch bill details
+  const handleOpenEdit = async (bill) => {
+    setEditingBill(bill)
+    try {
+      const billDetail = await api.getBill(bill.id)
+      const items = Array.isArray(billDetail.items) ? billDetail.items : []
+      
+      setEditForm({
+        discount: Number(bill.discount || 0),
+        paidAmount: Number(bill.paidAmount ?? bill.paid_amount ?? 0),
+        paymentMethod: bill.paymentMethod || bill.payment_method || 'Bank Transfer',
+        items: items.map(i => ({
+          productId: i.productId || i.product_id,
+          productName: i.productName || i.product_name || 'Product',
+          quantity: Number(i.quantity || 1),
+          rate: Number(i.rate || 0),
+          gst: Number(i.gst || 18)
+        }))
       })
-    });
-
-    // Alternatively, if you want a direct status update endpoint or full amount settlement:
-    // Refresh bills list from server
-    const updatedBills = await api.getBills('sales');
-    setSalesBills(Array.isArray(updatedBills) ? updatedBills : []);
-  } catch (err) {
-    console.error('Failed to update payment status:', err);
-    alert('Failed to update payment status');
+      setShowEditModal(true)
+    } catch (err) {
+      console.error('Failed to load bill items for editing:', err)
+      alert('Failed to load bill items')
+    }
   }
-};
+
+  // Handler to modify item quantity inside edit modal
+  const handleEditItemQuantityChange = (productId, newQty) => {
+    const qty = parseInt(newQty, 10)
+    if (isNaN(qty) || qty < 0) return
+    setEditForm(f => ({
+      ...f,
+      items: f.items.map(i => i.productId === productId ? { ...i, quantity: qty } : i)
+    }))
+  }
+
+  // Handler to submit bill updates
+  const handleUpdateBill = async () => {
+    if (!editingBill) return
+    try {
+      await api.updateBill(editingBill.id, {
+        discount: parseFloat(editForm.discount) || 0,
+        paidAmount: parseFloat(editForm.paidAmount) || 0,
+        paymentMethod: editForm.paymentMethod,
+        items: editForm.items.map(i => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          rate: i.rate,
+          gst: i.gst
+        }))
+      })
+
+      const updatedBills = await api.getBills('sales')
+      setSalesBills(Array.isArray(updatedBills) ? updatedBills : [])
+      setShowEditModal(false)
+      setEditingBill(null)
+    } catch (err) {
+      alert(err.message || 'Failed to update bill')
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -193,86 +280,88 @@ const handleTogglePaymentStatus = async (bill) => {
           </div>
         </div>
 
-        
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-dark-bg/50">
-                      <th className="table-header px-6 py-4">#</th>
-                      <th className="table-header px-6 py-4">Billing Date</th>
-                      <th className="table-header px-6 py-4">Buyer Name</th>
-                      <th className="table-header px-6 py-4 text-right">Subtotal</th>
-                      <th className="table-header px-6 py-4 text-right">GST (18%)</th>
-                      <th className="table-header px-6 py-4 text-right">Amount (₹)</th>
-                      <th className="table-header px-6 py-4 text-right">Paid Amount</th>
-                      <th className="table-header px-6 py-4 text-right">Remaining Due</th>
-                      <th className="table-header px-6 py-4 text-center">Status</th>
-                      <th className="table-header px-6 py-4 text-center">Action</th>
-                    </tr>
-                  </thead>
-                 <tbody>
-  {salesBills.map((bill, index) => {
-    const buyer = bill.buyerId ? getUserById(bill.buyerId) : null
-    const buyerName = buyer?.name || bill.buyerName || bill.buyer_name || 'Partner / SS'
-    const formattedDate = bill.billDate || bill.created_at || bill.date ? new Date(bill.billDate || bill.created_at || bill.date).toLocaleDateString() : '-'
-    
-    const subtotalValue = Number(bill.subtotal || 0)
-    const gstValue = Number(bill.gst || 0)
-    const discountValue = Number(bill.discount || 0)
-    const totalNetAmount = Number(bill.grand_total ?? bill.grandTotal ?? (subtotalValue - discountValue + gstValue))
-    
-    const paidAmount = Number(bill.paid_amount ?? bill.paidAmount ?? 0)
-    const remainingAmount = Math.max(0, totalNetAmount - paidAmount)
-    
-    const paymentStatus = remainingAmount <= 0.01 ? 'PAID' : 'PENDING'
-    const isPaid = paymentStatus === 'PAID';
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-dark-bg/50">
+                <th className="table-header px-6 py-4">#</th>
+                <th className="table-header px-6 py-4">Billing Date</th>
+                <th className="table-header px-6 py-4">Buyer Name</th>
+                <th className="table-header px-6 py-4 text-right">Subtotal</th>
+                <th className="table-header px-6 py-4 text-right">GST (18%)</th>
+                <th className="table-header px-6 py-4 text-right">Amount (₹)</th>
+                <th className="table-header px-6 py-4 text-right">Paid Amount</th>
+                <th className="table-header px-6 py-4 text-right">Remaining Due</th>
+                <th className="table-header px-6 py-4 text-center">Status</th>
+                <th className="table-header px-6 py-4 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {salesBills.map((bill, index) => {
+                const buyer = bill.buyerId ? getUserById(bill.buyerId) : null
+                const buyerName = buyer?.name || bill.buyerName || bill.buyer_name || 'Partner / SS'
+                const formattedDate = bill.billDate || bill.created_at || bill.date ? new Date(bill.billDate || bill.created_at || bill.date).toLocaleDateString() : '-'
+                
+                const subtotalValue = Number(bill.subtotal || 0)
+                const gstValue = Number(bill.gst || 0)
+                const discountValue = Number(bill.discount || 0)
+                const totalNetAmount = Number(bill.grand_total ?? bill.grandTotal ?? (subtotalValue - discountValue + gstValue))
+                
+                const paidAmount = Number(bill.paid_amount ?? bill.paidAmount ?? 0)
+                const remainingAmount = Math.max(0, totalNetAmount - paidAmount)
+                
+                const paymentStatus = remainingAmount <= 0.01 ? 'PAID' : 'PENDING'
+                const isPaid = paymentStatus === 'PAID';
 
-    return (
-      <tr key={bill.id || index} className="table-row">
-        <td className="px-6 py-4 font-mono text-sm text-brand-400 font-medium">{index + 1}</td>
-        <td className="px-6 py-4 text-dark-muted font-medium">{formattedDate}</td>
-        <td className="px-6 py-4 text-white font-semibold">{buyerName}</td>
-        <td className="px-6 py-4 text-right text-dark-muted">₹{subtotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td className="px-6 py-4 text-right text-dark-muted">₹{gstValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td className="px-6 py-4 text-right text-white font-bold">₹{totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td className="px-6 py-4 text-right text-emerald-400 font-medium">₹{paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td className="px-6 py-4 text-right text-amber-400 font-medium">₹{remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        
-        {/* Interactive Toggle Switch Cell matching your Red/Green styling */}
-        <td className="px-6 py-4 text-center">
-          <button
-            type="button"
-            onClick={() => handleTogglePaymentStatus(bill)}
-            className={`relative inline-flex h-7 w-20 items-center rounded-full transition-colors focus:outline-none shadow-inner ${
-              isPaid ? 'bg-emerald-600' : 'bg-red-600'
-            }`}
-            title={`Click to mark as ${isPaid ? 'Pending' : 'Paid'}`}
-          >
-            <span className={`absolute text-[10px] font-bold uppercase tracking-wider text-white ${isPaid ? 'left-4' : 'right-2'}`}>
-              {isPaid ? 'paid' : 'unpaid'}
-            </span>
-            <span
-              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform shadow-md ${
-                isPaid ? 'translate-x-14' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </td>
+                return (
+                  <tr key={bill.id || index} className="table-row">
+                    <td className="px-6 py-4 font-mono text-sm text-brand-400 font-medium">{index + 1}</td>
+                    <td className="px-6 py-4 text-dark-muted font-medium">{formattedDate}</td>
+                    <td className="px-6 py-4 text-white font-semibold">{buyerName}</td>
+                    <td className="px-6 py-4 text-right text-dark-muted">₹{subtotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-dark-muted">₹{gstValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-white font-bold">₹{totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-emerald-400 font-medium">₹{paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-amber-400 font-medium">₹{remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    
+                    {/* Interactive Toggle Switch Cell */}
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePaymentStatus(bill)}
+                        className={`relative inline-flex h-7 w-20 items-center rounded-full transition-colors focus:outline-none shadow-inner ${
+                          isPaid ? 'bg-emerald-600' : 'bg-red-600'
+                        }`}
+                        title={`Click to mark as ${isPaid ? 'Pending' : 'Paid'}`}
+                      >
+                        <span className={`absolute text-[10px] font-bold uppercase tracking-wider text-white ${isPaid ? 'left-4' : 'right-2'}`}>
+                          {isPaid ? 'paid' : 'unpaid'}
+                        </span>
+                        <span
+                          className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform shadow-md ${
+                            isPaid ? 'translate-x-14' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </td>
 
-        <td className="px-6 py-4 text-center">
-          <button onClick={() => setSelectedBill(bill)} className="text-accent-400 hover:text-accent-300 text-sm font-medium">
-            View
-          </button>
-        </td>
-      </tr>
-    )
-  })}
-  {salesBills.length === 0 && (
-    <tr><td colSpan="10" className="text-center py-12 text-dark-muted">No bills created yet</td></tr>
-  )}
-</tbody>
-                </table>
-              </div>
+                    <td className="px-6 py-4 text-center space-x-3">
+                      <button onClick={() => setSelectedBill(bill)} className="text-accent-400 hover:text-accent-300 text-sm font-medium">
+                        View
+                      </button>
+                      <button onClick={() => handleOpenEdit(bill)} className="text-brand-400 hover:text-brand-300 text-sm font-medium">
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+              {salesBills.length === 0 && (
+                <tr><td colSpan="10" className="text-center py-12 text-dark-muted">No bills created yet</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Create Bill Modal */}
@@ -289,11 +378,11 @@ const handleTogglePaymentStatus = async (bill) => {
                 <label className="block text-sm text-dark-muted mb-2">Select Super Store *</label>
                 <select
                   value={billForm.buyerId}
-                  onChange={(e) => setBillForm(f => ({ ...f, buyerId: e.target.value }))}
+                  onChange={handleBuyerChange}
                   className="input-field"
                 >
                   <option value="">-- Select Distributor --</option>
-                  {ssUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  {ssUsers.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                 </select>
               </div>
 
@@ -398,8 +487,105 @@ const handleTogglePaymentStatus = async (bill) => {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowCreateBill(false)} className="flex-1 btn-secondary">Cancel</button>
-              <button onClick={handleCreateBill} disabled={!billForm.buyerId || billForm.items.length === 0} className="flex-1 btn-primary disabled:opacity-50">Create Bill</button>
+              <button onClick={() => setShowCreateBill(false)} disabled={isSubmitting} className="flex-1 btn-secondary disabled:opacity-50">Cancel</button>
+              <button 
+                onClick={handleCreateBill} 
+                disabled={!billForm.buyerId || billForm.items.length === 0 || isSubmitting} 
+                className="flex-1 btn-primary disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    Creating Bill...
+                  </>
+                ) : (
+                  'Create Bill'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Bill Modal */}
+      {showEditModal && editingBill && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-dark-card border border-dark-border rounded-3xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">Edit Bill #{editingBill.billNumber || editingBill.bill_number || editingBill.id}</h3>
+            <p className="text-xs text-dark-muted mb-6">Modify product quantities, payment details, and discounts. Stock levels will adjust automatically.</p>
+            
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-dark-border overflow-hidden bg-dark-bg/40">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-dark-bg text-dark-muted text-[11px] uppercase font-bold tracking-wider border-b border-dark-border">
+                      <th className="text-left px-4 py-3">Product Name</th>
+                      <th className="text-right px-4 py-3">Rate</th>
+                      <th className="text-right px-4 py-3">Quantity</th>
+                      <th className="text-right px-4 py-3">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dark-border/50 text-slate-200">
+                    {editForm.items.map(item => (
+                      <tr key={item.productId} className="hover:bg-white/[0.01]">
+                        <td className="px-4 py-3 font-semibold text-white">{item.productName}</td>
+                        <td className="px-4 py-3 text-right text-dark-muted">₹{item.rate.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => handleEditItemQuantityChange(item.productId, e.target.value)}
+                            className="w-20 bg-dark-card border border-dark-border rounded px-2 py-1 text-center text-white text-sm font-bold"
+                            min="0"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-right text-white font-bold">₹{(item.quantity * item.rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Payment Method</label>
+                  <select
+                    value={editForm.paymentMethod}
+                    onChange={(e) => setEditForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                    className="input-field text-sm font-medium"
+                  >
+                    <option>Cash</option>
+                    <option>UPI</option>
+                    <option>Bank Transfer</option>
+                    <option>Credit</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Paid Amount (₹)</label>
+                  <input
+                    type="number"
+                    value={editForm.paidAmount}
+                    onChange={(e) => setEditForm(f => ({ ...f, paidAmount: e.target.value }))}
+                    className="input-field text-sm font-medium"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-dark-muted mb-2">Discount (₹)</label>
+                  <input
+                    type="number"
+                    value={editForm.discount}
+                    onChange={(e) => setEditForm(f => ({ ...f, discount: e.target.value }))}
+                    className="input-field text-sm font-medium"
+                    min="0"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
+              <button onClick={() => setShowEditModal(false)} className="flex-1 btn-secondary py-3 text-sm font-semibold">Cancel</button>
+              <button onClick={handleUpdateBill} className="flex-1 btn-primary py-3 text-sm font-bold">Save Changes & Recalculate Stock</button>
             </div>
           </div>
         </div>

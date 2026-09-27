@@ -8,13 +8,16 @@ import { api } from '../../api.js'
 export default function SSUsers() {
   const { data, addUser } = useData()
   const { user } = useAuth()
-  const ssId = user?.id || 2
+  const ssId = user?.id || 1
 
   const [activeTab, setActiveTab] = useState('DISTRIBUTOR')
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [usersList, setUsersList] = useState([])
-  const [newUser, setNewUser] = useState({ username: '', name: '', role: 'DISTRIBUTOR', parentId: ssId })
+  
+  // Create user form state including password and loading indicators
+  const [newUser, setNewUser] = useState({ username: '', name: '', password: '', role: 'DISTRIBUTOR', parentId: ssId })
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const roleConfig = {
     DISTRIBUTOR: { icon: Users, color: 'text-emerald-500', bg: 'bg-emerald-500/15', label: 'My Distributors' },
@@ -36,37 +39,48 @@ export default function SSUsers() {
     fetchUsers()
   }, [data?.users])
 
-  // Filter users belonging to this SS network hierarchy
-  const myDistributorIds = usersList.filter(u => u.role === 'DISTRIBUTOR' && Number(u.parentId ?? u.parent_id) === Number(ssId)).map(d => d.id)
+  const isAdmin = user?.role === 'ADMIN'
+
+  // Filter users belonging to this hierarchy
+  const myDistributorIds = usersList.filter(u => u.role === 'DISTRIBUTOR' && (isAdmin || Number(u.parentId ?? u.parent_id) === Number(ssId))).map(d => d.id)
 
   const filteredUsers = usersList.filter(u => {
     if (u.role === 'ADMIN' || u.role === 'SS') return false
     if (activeTab && u.role !== activeTab) return false
 
-    // SS can see their own distributors and retailers under those distributors
-    if (u.role === 'DISTRIBUTOR' && Number(u.parentId ?? u.parent_id) !== Number(ssId)) return false
-    if (u.role === 'RETAILER' && !myDistributorIds.includes(Number(u.parentId ?? u.parent_id))) return false
+    if (!isAdmin) {
+      if (u.role === 'DISTRIBUTOR' && Number(u.parentId ?? u.parent_id) !== Number(ssId)) return false
+      if (u.role === 'RETAILER' && !myDistributorIds.includes(Number(u.parentId ?? u.parent_id))) return false
+    }
 
     if (search && !u.name.toLowerCase().includes(search.toLowerCase()) && !u.username.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
 
-  const handleAddUser = async () => {
-    if (!newUser.username || !newUser.name) return
+  // Full Create User Handler with submission state management
+  const handleCreateUser = async () => {
+    if (!newUser.username || !newUser.name || !newUser.password || isSubmitting) return
     try {
+      setIsSubmitting(true)
       await addUser({
-        ...newUser,
-        parentId: ssId, // Automatically bind parent to logged-in SS
+        name: newUser.name.trim(),
         username: newUser.username.toLowerCase().replace(/\s/g, '_'),
+        password: newUser.password,
+        role: newUser.role,
+        parentId: Number(newUser.parentId) || ssId,
       })
-      setNewUser({ username: '', name: '', role: activeTab, parentId: ssId })
+
+      // Reset form and close modal
+      setNewUser({ username: '', name: '', password: '', role: activeTab, parentId: ssId })
       setShowModal(false)
-      
-      // Refresh list
+
+      // Refresh list from API
       const res = await api.getUsers().catch(() => [])
       setUsersList(Array.isArray(res) ? res : (res?.users || data?.users || []))
     } catch (err) {
-      alert(err.message || 'Failed to add user')
+      alert(err.message || 'Failed to create user')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -75,17 +89,21 @@ export default function SSUsers() {
     return parent?.name || '-'
   }
 
+  const availableParents = isAdmin 
+    ? usersList.filter(u => u.role === 'SS' || u.role === 'DISTRIBUTOR' || u.role === 'ADMIN')
+    : usersList.filter(u => u.id === ssId || (newUser.role === 'RETAILER' && u.role === 'DISTRIBUTOR' && Number(u.parentId ?? u.parent_id) === Number(ssId)))
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white">Distributor & Retailer Network</h2>
-          <p className="text-dark-muted text-sm">Manage distributors under your Super Store franchise</p>
+          <p className="text-dark-muted text-sm">Manage downline distributors and retailers</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
+        <button onClick={() => { setNewUser(prev => ({ ...prev, role: activeTab, parentId: ssId })); setShowModal(true); }} className="btn-primary flex items-center gap-2">
           <Plus size={18} />
-          Add Distributor
+          Add Network User
         </button>
       </div>
       
@@ -94,8 +112,8 @@ export default function SSUsers() {
         {Object.entries(roleConfig).map(([role, config]) => {
           const Icon = config.icon
           const count = usersList.filter(u => {
-            if (role === 'DISTRIBUTOR') return u.role === 'DISTRIBUTOR' && Number(u.parentId || u.parentId) === Number(ssId)
-            if (role === 'RETAILER') return u.role === 'RETAILER' && myDistributorIds.includes(Number(u.parentId || u.parentId))
+            if (role === 'DISTRIBUTOR') return u.role === 'DISTRIBUTOR' && (isAdmin || Number(u.parentId || u.parent_id) === Number(ssId))
+            if (role === 'RETAILER') return u.role === 'RETAILER' && (isAdmin || myDistributorIds.includes(Number(u.parentId || u.parent_id)))
             return false
           }).length
 
@@ -183,72 +201,101 @@ export default function SSUsers() {
         )}
       </div>
       
-      {/* Add User Modal */}
-     {/* Add User Modal */}
-{showModal && (
-  <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-    <div className="bg-dark-card border border-dark-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-brand-500/15 flex items-center justify-center text-brand-500">
-          <UserPlus size={20} />
-        </div>
-        <h3 className="text-lg font-semibold text-white">Add New Distributor & Password</h3>
-      </div>
-      
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm text-dark-muted mb-2">Full Name *</label>
-          <input
-            type="text"
-            value={newUser.name}
-            onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))}
-            className="input-field"
-            placeholder="e.g., Distributor North"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-dark-muted mb-2">Username *</label>
-          <input
-            type="text"
-            value={newUser.username}
-            onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
-            className="input-field"
-            placeholder="e.g., dist_north"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-dark-muted mb-2">Password *</label>
-          <div className="relative">
-            <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted" />
-            <input
-              type="password"
-              value={newUser.password || ''}
-              onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
-              className="input-field pl-10 text-white"
-              placeholder="Enter login password"
-            />
+      {/* Create User Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-card border border-dark-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-brand-500/15 flex items-center justify-center text-brand-500">
+                <UserPlus size={20} />
+              </div>
+              <h3 className="text-lg font-semibold text-white">Add New Network User</h3>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-dark-muted mb-2">Role</label>
+                <select
+                  value={newUser.role}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, role: e.target.value }))}
+                  className="input-field"
+                >
+                  <option value="DISTRIBUTOR">Distributor</option>
+                  <option value="RETAILER">Retailer</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-dark-muted mb-2">Assign Parent To</label>
+                <select
+                  value={newUser.parentId}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, parentId: e.target.value }))}
+                  className="input-field"
+                >
+                  <option value={ssId}>Myself ({user?.name || 'Admin'})</option>
+                  {availableParents.filter(p => Number(p.id) !== Number(ssId)).map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.role})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-dark-muted mb-2">Full Name *</label>
+                <input
+                  type="text"
+                  value={newUser.name}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))}
+                  className="input-field"
+                  placeholder="e.g., John Doe"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm text-dark-muted mb-2">Username *</label>
+                <input
+                  type="text"
+                  value={newUser.username}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
+                  className="input-field"
+                  placeholder="e.g., dist_north"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm text-dark-muted mb-2">Password *</label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted" />
+                  <input
+                    type="password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
+                    className="input-field pl-10 text-white"
+                    placeholder="Enter login password"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowModal(false)} disabled={isSubmitting} className="flex-1 btn-secondary disabled:opacity-50">Cancel</button>
+              <button 
+                onClick={handleCreateUser} 
+                disabled={!newUser.username || !newUser.name || !newUser.password || isSubmitting} 
+                className="flex-1 btn-primary disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    Creating...
+                  </>
+                ) : (
+                  'Create User'
+                )}
+              </button>
+            </div>
           </div>
         </div>
-        <div>
-          <label className="block text-sm text-dark-muted mb-2">Role</label>
-          <select
-            value={newUser.role}
-            onChange={(e) => setNewUser(prev => ({ ...prev, role: e.target.value }))}
-            className="input-field"
-          >
-            <option value="DISTRIBUTOR">Distributor</option>
-            <option value="RETAILER">Retailer</option>
-          </select>
-        </div>
-      </div>
-      
-      <div className="flex gap-3 mt-6">
-        <button onClick={() => setShowModal(false)} className="flex-1 btn-secondary">Cancel</button>
-        <button onClick={handleAddUser} className="flex-1 btn-primary">Create User</button>
-      </div>
-    </div>
-  </div>
-)}
+      )}
     </div>
   )
 }

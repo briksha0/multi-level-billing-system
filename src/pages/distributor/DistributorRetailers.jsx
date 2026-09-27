@@ -11,6 +11,7 @@ export default function DistributorRetailers() {
   const [showModal, setShowModal] = useState(false)
   const [retailers, setRetailers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   
   const userId = user?.id || 4
   const [newUser, setNewUser] = useState({ username: '', name: '', password: '', role: 'RETAILER', parentId: userId })
@@ -46,12 +47,13 @@ export default function DistributorRetailers() {
   }, [userId, data?.users])
 
   const handleAdd = async () => {
-    if (!newUser.username || !newUser.name || !newUser.password) {
+    if (!newUser.username || !newUser.name || !newUser.password || isSubmitting) {
       alert('Please fill in all required fields including password.')
       return
     }
 
     try {
+      setIsSubmitting(true)
       await addUser({ 
         ...newUser, 
         parentId: userId,
@@ -70,6 +72,8 @@ export default function DistributorRetailers() {
       setShowModal(false)
     } catch (err) {
       alert(err.message || 'Failed to add retailer')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -152,8 +156,21 @@ export default function DistributorRetailers() {
               </div>
             </div>
             <div className="flex gap-3 mt-8 pt-4 border-t border-dark-border">
-              <button onClick={() => setShowModal(false)} className="flex-1 btn-secondary py-3 text-sm font-semibold">Cancel</button>
-              <button onClick={handleAdd} className="flex-1 btn-primary py-3 text-sm font-bold">Add Retailer</button>
+              <button onClick={() => setShowModal(false)} disabled={isSubmitting} className="flex-1 btn-secondary py-3 text-sm font-semibold disabled:opacity-50">Cancel</button>
+              <button 
+                onClick={handleAdd} 
+                disabled={!newUser.username || !newUser.name || !newUser.password || isSubmitting} 
+                className="flex-1 btn-primary py-3 text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    Adding Retailer...
+                  </>
+                ) : (
+                  'Add Retailer'
+                )}
+              </button>
             </div>
           </div>
         </div>
