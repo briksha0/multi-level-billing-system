@@ -122,16 +122,16 @@ export default function DistributorBilling() {
     return billForm.items.reduce((sum, item) => sum + item.quantity * item.rate, 0)
   }
 
-  // Calculate GST explicitly based on Subtotal amount
   const calculateGST = (subtotalAmt) => {
     return subtotalAmt * 0.18
   }
 
   const subtotal = calculateSubtotal()
   const gst = calculateGST(subtotal)
+  const totalBeforeDiscount = subtotal + gst
   const discountPercent = billForm.discount || 0
-  const discountAmount = (subtotal * discountPercent) / 100
-  const grandTotal = subtotal - discountAmount + gst
+  const discountAmount = (totalBeforeDiscount * discountPercent) / 100
+  const grandTotal = totalBeforeDiscount - discountAmount
   const due = grandTotal - (billForm.paidAmount || 0)
 
   const handleCreateBill = async () => {
@@ -444,7 +444,7 @@ export default function DistributorBilling() {
                 </div>
               )}
 
-              {/* Totals with Visible GST Calculation */}
+              {/* Totals with Visible GST Calculation & Total-based Discount */}
               <div className="p-4 rounded-xl bg-dark-bg border border-dark-border space-y-2.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-dark-muted">Subtotal</span>
@@ -463,6 +463,12 @@ export default function DistributorBilling() {
                     className="w-28 bg-dark-card border border-dark-border rounded px-2 py-1 text-right text-white text-sm" 
                   />
                 </div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-sm text-emerald-400">
+                    <span>Discount Amount</span>
+                    <span>-₹{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                )}
                 <div className="flex justify-between pt-2.5 border-t border-dark-border font-semibold">
                   <span className="text-white text-base">Grand Total</span>
                   <span className="text-brand-400 text-lg">₹{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>

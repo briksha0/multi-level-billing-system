@@ -8,7 +8,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { api } from '../../api.js'
 
 export default function DistributorDashboard() {
-  const { data, getChildren, getUserStock, getLowStockItems, getTodaySales, getPendingPayments, getUserSalesBills } = useData()
+  const { data, getUserStock, getLowStockItems, getTodaySales, getPendingPayments } = useData()
   const { user } = useAuth()
   
   const userId = user?.id || 4
@@ -20,13 +20,30 @@ export default function DistributorDashboard() {
   const [pendingPaymentsVal, setPendingPaymentsVal] = useState(0)
   const [loading, setLoading] = useState(true)
 
-  // Safely fetch network retailers, bills, and async metrics on load
+  // Safely fetch network retailers, bills, and async metrics on load with fallback logic
   useEffect(() => {
     async function loadDistributorDashboardData() {
       try {
         setLoading(true)
-        const [rets, bills, stockRes, lowStockRes, salesVal, pendingVal] = await Promise.all([
-          api.getChildren(userId, 'RETAILER').catch(() => []),
+        
+        // Fetch retailers using API children with fallback to context data users
+        let rets = []
+        try {
+          const res = await api.getChildren('me', 'RETAILER').catch(() => api.getChildren(userId, 'RETAILER'))
+          if (Array.isArray(res)) {
+            rets = res
+          } else if (res && typeof res === 'object') {
+            rets = res.data || res.retailers || res.users || []
+          }
+        } catch (e) {
+          console.warn('API getChildren failed, falling back to context data users')
+        }
+
+        if (rets.length === 0 && Array.isArray(data?.users)) {
+          rets = data.users.filter(u => u.role === 'RETAILER' && (Number(u.parentId || u.parent_id) === Number(userId) || !u.parentId))
+        }
+
+        const [bills, stockRes, lowStockRes, salesVal, pendingVal] = await Promise.all([
           api.getBills('sales').catch(() => []),
           getUserStock(userId).catch(() => ({})),
           getLowStockItems(userId).catch(() => []),
@@ -34,7 +51,7 @@ export default function DistributorDashboard() {
           getPendingPayments(userId).catch(() => 0),
         ])
 
-        setRetailers(Array.isArray(rets) ? rets : [])
+        setRetailers(rets)
         setSalesBills(Array.isArray(bills) ? bills : [])
         setStockMap(stockRes || {})
         setLowStockList(Array.isArray(lowStockRes) ? lowStockRes : [])
@@ -47,7 +64,7 @@ export default function DistributorDashboard() {
       }
     }
     loadDistributorDashboardData()
-  }, [userId, getUserStock, getLowStockItems, getTodaySales, getPendingPayments])
+  }, [userId, getUserStock, getLowStockItems, getTodaySales, getPendingPayments, data?.users])
 
   const totalStockQty = Object.values(stockMap).reduce((s, q) => s + Number(q || 0), 0)
   
@@ -55,6 +72,7 @@ export default function DistributorDashboard() {
   const userSalesBills = Array.isArray(salesBills) ? salesBills : []
   const recentBills = [...userSalesBills].sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 5)
   
+  // Calculate sales mapped per retailer
   const retailerSales = retailers.map(r => {
     const rBills = userSalesBills.filter(b => Number(b.buyerId || b.buyer_id) === Number(r.id))
     const sales = rBills.reduce((s, b) => {

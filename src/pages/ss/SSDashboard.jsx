@@ -3,16 +3,17 @@ import { useState, useEffect } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import MetricCard from '../../components/MetricCard.jsx'
-import { Users, Store, Warehouse, TrendingUp, ShoppingCart, DollarSign, AlertTriangle, Package, IndianRupee } from 'lucide-react'
+import { Users, Store, Warehouse, TrendingUp, ShoppingCart, AlertTriangle, Package, IndianRupee } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { api } from '../../api.js'
 
 export default function SSDashboard() {
-  const { data, getChildren, getUserStock, getLowStockItems, getTodaySales, getPendingPayments, getUserSalesBills } = useData()
+  const { data, getUserStock, getLowStockItems, getTodaySales, getPendingPayments, getUserSalesBills } = useData()
   const { user } = useAuth()
   const ssId = user?.id || 2
 
   const [users, setUsers] = useState([])
+  const [distributors, setDistributors] = useState([])
   const [bills, setBills] = useState([])
   const [stockMap, setStockMap] = useState({})
   const [lowStockList, setLowStockList] = useState([])
@@ -20,11 +21,25 @@ export default function SSDashboard() {
   const [pendingPaymentsVal, setPendingPaymentsVal] = useState(0)
   const [loading, setLoading] = useState(true)
 
-  // Fetch all metric dependencies asynchronously
+  // Fetch all metric dependencies asynchronously with robust child fallback parsing
   useEffect(() => {
     async function loadDashboardMetrics() {
       try {
         setLoading(true)
+
+        // Fetch direct distributors (children) via API with fallback
+        let dists = []
+        try {
+          const res = await api.getChildren('me', 'DISTRIBUTOR').catch(() => api.getChildren(ssId, 'DISTRIBUTOR'))
+          if (Array.isArray(res)) {
+            dists = res
+          } else if (res && typeof res === 'object') {
+            dists = res.data || res.distributors || res.users || []
+          }
+        } catch (e) {
+          console.warn('API getChildren failed, falling back to context data users')
+        }
+
         const [usersRes, billsRes, stockRes, lowStockRes, salesVal, pendingVal] = await Promise.all([
           api.getUsers().catch(() => data?.users || []),
           getUserSalesBills(ssId).catch(() => data?.bills || []),
@@ -34,7 +49,14 @@ export default function SSDashboard() {
           getPendingPayments(ssId).catch(() => 0),
         ])
 
-        setUsers(Array.isArray(usersRes) ? usersRes : (usersRes?.data || usersRes?.users || data?.users || []))
+        const allUsers = Array.isArray(usersRes) ? usersRes : (usersRes?.data || usersRes?.users || data?.users || [])
+        
+        if (dists.length === 0 && allUsers.length > 0) {
+          dists = allUsers.filter(u => u.role === 'DISTRIBUTOR' && (Number(u.parentId || u.parent_id) === Number(ssId) || !u.parentId))
+        }
+
+        setUsers(allUsers)
+        setDistributors(dists)
         setBills(Array.isArray(billsRes) ? billsRes : (billsRes?.data || billsRes?.bills || data?.bills || []))
         setStockMap(stockRes || {})
         setLowStockList(Array.isArray(lowStockRes) ? lowStockRes : [])
@@ -49,12 +71,9 @@ export default function SSDashboard() {
     loadDashboardMetrics()
   }, [ssId, getUserStock, getLowStockItems, getTodaySales, getPendingPayments, getUserSalesBills, data?.users, data?.bills])
 
-  // Hierarchy calculations
-  const rawDistributors = typeof getChildren === 'function' ? getChildren(ssId, 'DISTRIBUTOR') : users.filter(u => u.role === 'DISTRIBUTOR' && Number(u.parent_id || u.parentId) === Number(ssId))
-  const distributors = Array.isArray(rawDistributors) ? rawDistributors : []
-  
+  // Retailers under these distributors
   const retailers = distributors.flatMap(d => {
-    const childRetailers = typeof getChildren === 'function' ? getChildren(d.id, 'RETAILER') : users.filter(u => u.role === 'RETAILER' && Number(u.parent_id || u.parentId) === Number(d.id))
+    const childRetailers = users.filter(u => u.role === 'RETAILER' && Number(u.parent_id || u.parentId) === Number(d.id))
     return Array.isArray(childRetailers) ? childRetailers : []
   })
   
