@@ -104,8 +104,9 @@ export default function SSDashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="space-y-6 px-2 sm:px-0">
+      {/* Metric Cards - Fully Responsive Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard icon={Users} label="Distributors" value={distributors.length} iconColor="text-accent-500" iconBg="bg-accent-500/15" />
         <MetricCard icon={Store} label="Retailers" value={retailers.length} iconColor="text-emerald-500" iconBg="bg-emerald-500/15" />
         <MetricCard icon={Warehouse} label="Current Stock" value={totalStockQty.toLocaleString()} iconColor="text-brand-500" iconBg="bg-brand-500/15" />
@@ -116,10 +117,11 @@ export default function SSDashboard() {
         <MetricCard icon={Package} label="Products" value={Array.isArray(data?.products) ? data.products.length : 0} iconColor="text-brand-500" iconBg="bg-brand-500/15" />
       </div>
       
+      {/* Charts & Recent Bills - Responsive Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6 shadow-xl">
+        <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-xl">
           <h3 className="text-lg font-semibold text-white mb-4">Sales to Distributors</h3>
-          <div style={{ height: 300 }}>
+          <div className="w-full h-[280px] sm:h-[320px]">
             {distSalesData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={distSalesData}>
@@ -136,11 +138,11 @@ export default function SSDashboard() {
           </div>
         </div>
         
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6 shadow-xl">
+        <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-xl">
           <h3 className="text-lg font-semibold text-white mb-4">Recent Bills</h3>
           <div className="space-y-3">
             {recentBills.length === 0 ? (
-              <p className="text-dark-muted text-sm">No bills yet</p>
+              <p className="text-dark-muted text-sm py-12 text-center">No bills yet</p>
             ) : recentBills.map(bill => {
               const buyerId = bill.buyerId || bill.buyer_id
               const buyer = users.find(u => Number(u.id) === Number(buyerId))
@@ -151,14 +153,14 @@ export default function SSDashboard() {
               const status = (bill.paymentStatus || bill.payment_status || 'PENDING').toUpperCase()
 
               return (
-                <div key={bill.id} className="flex items-center justify-between p-3 rounded-xl bg-dark-bg border border-dark-border">
+                <div key={bill.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3.5 rounded-xl bg-dark-bg border border-dark-border">
                   <div>
                     <div className="font-medium text-white text-sm">{bill.billNumber || bill.bill_number}</div>
                     <div className="text-xs text-dark-muted">{bill.billDate || bill.created_at || ''} · {buyer?.name || 'Partner'}</div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-semibold text-white">₹{gTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between">
+                    <div className="font-semibold text-white text-sm">₹{gTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mt-0.5 ${
                       status === 'PAID' ? 'bg-emerald-500/15 text-emerald-400' :
                       status === 'PARTIAL' ? 'bg-amber-500/15 text-amber-400' :
                       'bg-red-500/15 text-red-400'

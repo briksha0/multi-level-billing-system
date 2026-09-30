@@ -166,16 +166,8 @@ async function initializeDB() {
       };
 
       // Users
-      const adminId = await insertUser('admin', 'admin123', 'System Admin', 'ADMIN', null);
-      const ssAgraId = await insertUser('ss_agra', 'ss123', 'SS Agra', 'SS', adminId);
-      const ssDelhiId = await insertUser('ss_delhi', 'ss123', 'SS Delhi', 'SS', adminId);
-      const distAId = await insertUser('dist_a', 'dist123', 'Distributor A', 'DISTRIBUTOR', ssAgraId);
-      const distBId = await insertUser('dist_b', 'dist123', 'Distributor B', 'DISTRIBUTOR', ssAgraId);
-      const distCId = await insertUser('dist_c', 'dist123', 'Distributor C', 'DISTRIBUTOR', ssDelhiId);
-      const retailAId = await insertUser('retail_a', 'retail123', 'Retailer A', 'RETAILER', distAId);
-      await insertUser('retail_b', 'retail123', 'Retailer B', 'RETAILER', distAId);
-      await insertUser('retail_c', 'retail123', 'Retailer C', 'RETAILER', distBId);
-      await insertUser('retail_d', 'retail123', 'Retailer D', 'RETAILER', distCId);
+      const adminId = await insertUser('admin', 'admin12345', 'System Admin', 'ADMIN', null);
+      
 
       // 3. Ensure default categories exist first before inserting products
       await pool.query(`
@@ -211,7 +203,7 @@ async function initializeDB() {
         ['Black Phenyl 5L', 2, 'BP-5L', '890122', 'PCS', '', 194.08, 209.42, 228.81, 499, 50],
         ['Glass Cleaner 500ml', 2, 'GC-500', '890123', 'PCS', '', 39.50, 42.66, 46.61, 109, 50],
         ['Glass Cleaner 5L', 2, 'GC-5L', '890124', 'PCS', '', 215.46, 232.69, 254.24, 599, 50],
-        ['Room Freshener 200ml', 2, 'RF-200', '890125', 'PCS', '', 53.86, 58.17, 63.56, 179, 50],
+        ['Room Freshener 250ml', 2, 'RF-200', '890125', 'PCS', '', 53.86, 58.17, 63.56, 179, 50],
         ['Room Freshener 5L', 2, 'RF-5L', '890126', 'PCS', '', 574.55, 620.51, 677.97, 1499, 50]
       ];
 
@@ -255,14 +247,7 @@ async function initializeDB() {
       await pool.query('INSERT INTO bill_items (bill_id, product_id, quantity, rate, gst, amount) VALUES ($1, $2, $3, $4, $5, $6)', [bill1Id, 2, 50, 161.02, 18, 9500.18]);
 
       // Customers
-      const customers = [
-        ['Walk-in Customer', '', '', '', retailAId],
-        ['Rajesh Kumar', '9876543210', 'rajesh@email.com', '123 Main St', retailAId],
-        ['Priya Sharma', '9876543211', 'priya@email.com', '456 Park Ave', retailAId]
-      ];
-      for (const c of customers) {
-        await pool.query('INSERT INTO customers (name, phone, email, address, retailer_id) VALUES ($1, $2, $3, $4, $5)', c);
-      }
+     
 
       console.log('✅ PostgreSQL Database seeded successfully!');
     }

@@ -1,3 +1,4 @@
+// src/pages/retailer/RetailerDashboard.jsx
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useData } from '../../context/DataContext.jsx'
 import MetricCard from '../../components/MetricCard.jsx'
@@ -9,7 +10,7 @@ export default function RetailerDashboard() {
   const products = Array.isArray(data?.products) ? data.products : []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-2 sm:px-0">
       <div>
         <h2 className="text-2xl font-bold text-white">Retailer Dashboard</h2>
         <p className="text-dark-muted text-sm">Welcome, {user?.name || 'Retailer'}</p>

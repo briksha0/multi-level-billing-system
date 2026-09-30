@@ -94,8 +94,9 @@ export default function DistributorDashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div className="space-y-6 px-2 sm:px-0">
+      {/* Metric Cards - Fully Responsive Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard icon={Store} label="Retailers" value={retailers.length} iconColor="text-emerald-500" iconBg="bg-emerald-500/15" />
         <MetricCard icon={Warehouse} label="Current Stock" value={totalStockQty.toLocaleString()} iconColor="text-brand-500" iconBg="bg-brand-500/15" />
         <MetricCard icon={TrendingUp} label="Today's Sales" value={`₹${todaySalesVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} iconColor="text-emerald-500" iconBg="bg-emerald-500/15" />
@@ -105,10 +106,11 @@ export default function DistributorDashboard() {
         <MetricCard icon={Package} label="Products" value={Array.isArray(data?.products) ? data.products.length : 0} iconColor="text-brand-500" iconBg="bg-brand-500/15" />
       </div>
       
+      {/* Charts & Recent Bills - Responsive Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6 shadow-xl">
+        <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-xl">
           <h3 className="text-lg font-semibold text-white mb-4">Sales to Retailers</h3>
-          <div style={{ height: 300 }}>
+          <div className="w-full h-[280px] sm:h-[320px]">
             {retailerSales.length === 0 ? (
               <div className="h-full flex items-center justify-center text-dark-muted text-sm">No retailer sales data available</div>
             ) : (
@@ -125,7 +127,7 @@ export default function DistributorDashboard() {
           </div>
         </div>
         
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6 shadow-xl">
+        <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-xl">
           <h3 className="text-lg font-semibold text-white mb-4">Recent Bills</h3>
           <div className="space-y-3">
             {recentBills.length === 0 ? (
@@ -140,14 +142,14 @@ export default function DistributorDashboard() {
               const pStatus = (bill.paymentStatus || bill.payment_status || 'PENDING').toUpperCase()
               
               return (
-                <div key={bill.id} className="flex items-center justify-between p-3.5 rounded-xl bg-dark-bg border border-dark-border">
+                <div key={bill.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3.5 rounded-xl bg-dark-bg border border-dark-border">
                   <div>
                     <div className="font-medium text-white text-sm">{bill.billNumber || bill.bill_number || `INV-${bill.id}`}</div>
                     <div className="text-xs text-dark-muted mt-0.5">{bill.billDate || bill.created_at || 'Recent'} · {buyer?.name || bill.buyerName || 'Partner Buyer'}</div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-bold text-white">₹{billTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mt-1 ${pStatus === 'PAID' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : pStatus === 'PARTIAL' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'}`}>
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between">
+                    <div className="font-bold text-white text-sm">₹{billTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mt-0.5 ${pStatus === 'PAID' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : pStatus === 'PARTIAL' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'}`}>
                       {pStatus}
                     </span>
                   </div>

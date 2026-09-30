@@ -1,3 +1,4 @@
+// src/pages/admin/AdminDashboard.jsx
 import { useState, useEffect } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { api } from '../../api.js'
@@ -55,9 +56,9 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Metric Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="space-y-6 px-2 sm:px-0">
+      {/* Metric Cards Grid - Fully Responsive */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <MetricCard icon={Building2} label="Total SS" value={summary?.ssCount ?? ssCount} iconColor="text-brand-500" iconBg="bg-brand-500/15" />
         <MetricCard icon={Users} label="Distributors" value={summary?.distCount ?? distCount} iconColor="text-accent-500" iconBg="bg-accent-500/15" />
         <MetricCard icon={Store} label="Retailers" value={summary?.retailCount ?? retailerCount} iconColor="text-emerald-500" iconBg="bg-emerald-500/15" />
@@ -65,21 +66,21 @@ export default function AdminDashboard() {
         <MetricCard icon={Warehouse} label="Total Stock" value={(summary?.totalStock || 0).toLocaleString()} iconColor="text-brand-500" iconBg="bg-brand-500/15" />
         <MetricCard icon={TrendingUp} label="Today's Sales" value={`₹${(summary?.todaySales || 0).toLocaleString()}`} subValueColor="text-emerald-400" iconColor="text-accent-500" iconBg="bg-accent-500/15" />
         <MetricCard
-  icon={IndianRupee}
-  label="Pending Payments"
-  value={`₹${(summary?.pendingPayments || 0).toLocaleString('en-IN')}`}
-  subValueColor="text-red-400"
-  iconColor="text-red-500"
-  iconBg="bg-red-500/15"
-/>
+          icon={IndianRupee}
+          label="Pending Payments"
+          value={`₹${(summary?.pendingPayments || 0).toLocaleString('en-IN')}`}
+          subValueColor="text-red-400"
+          iconColor="text-red-500"
+          iconBg="bg-red-500/15"
+        />
         <MetricCard icon={AlertTriangle} label="Low Stock Items" value={summary?.lowStock ?? lowStock.length} subValue={lowStock.length > 0 ? "Needs attention" : ""} subValueColor="text-amber-400" iconColor="text-amber-500" iconBg="bg-amber-500/15" />
       </div>
       
-      {/* Charts Row */}
+      {/* Charts Row - Responsive Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6">
+        <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-xl">
           <h3 className="text-lg font-semibold text-white mb-4">Sales by Level</h3>
-          <div style={{ height: 300 }}>
+          <div className="w-full h-[280px] sm:h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={salesByLevel.length > 0 ? salesByLevel : [
                 { name: 'Admin', sales: 0 }, { name: 'SS', sales: 0 },
@@ -98,17 +99,17 @@ export default function AdminDashboard() {
           </div>
         </div>
         
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6">
+        <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-xl">
           <h3 className="text-lg font-semibold text-white mb-4">Products by Category</h3>
-          <div style={{ height: 300 }}>
+          <div className="w-full h-[280px] sm:h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={categoryData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
+                  innerRadius={50}
+                  outerRadius={90}
                   paddingAngle={4}
                   dataKey="value"
                   label={({ name, value }) => `${name}: ${value}`}
@@ -126,9 +127,9 @@ export default function AdminDashboard() {
         </div>
       </div>
       
-      {/* Recent Bills & Low Stock */}
+      {/* Recent Bills & Low Stock - Responsive Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6">
+        <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-xl">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <ShoppingCart size={18} className="text-brand-500" />
             Recent Bills
@@ -139,16 +140,16 @@ export default function AdminDashboard() {
             ) : recentBills.map(bill => {
               const buyer = bill.buyerId ? getUserById(bill.buyerId) : null
               return (
-                <div key={bill.id} className="flex items-center justify-between p-3 rounded-xl bg-dark-bg border border-dark-border">
+                <div key={bill.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-dark-bg border border-dark-border">
                   <div>
                     <div className="font-medium text-white text-sm">{bill.bill_number || bill.billNumber}</div>
                     <div className="text-xs text-dark-muted">
                       {bill.bill_date || bill.billDate} · {buyer?.name || bill.customer_name || bill.customerName || 'Customer'}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-semibold text-white">₹{(bill.grand_total || bill.grandTotal || 0).toLocaleString()}</div>
-                    <span className={`status-pill ${
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between">
+                    <div className="font-semibold text-white text-sm">₹{(bill.grand_total || bill.grandTotal || 0).toLocaleString()}</div>
+                    <span className={`status-pill mt-0.5 ${
                       (bill.payment_status || bill.paymentStatus) === 'PAID' ? 'bg-emerald-500/15 text-emerald-400' :
                       (bill.payment_status || bill.paymentStatus) === 'PARTIAL' ? 'bg-amber-500/15 text-amber-400' :
                       'bg-red-500/15 text-red-400'
@@ -162,7 +163,7 @@ export default function AdminDashboard() {
           </div>
         </div>
         
-        <div className="bg-dark-card border border-dark-border rounded-2xl p-6">
+        <div className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 shadow-xl">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <AlertTriangle size={18} className="text-amber-500" />
             Low Stock Alerts
@@ -172,13 +173,13 @@ export default function AdminDashboard() {
           ) : (
             <div className="space-y-3">
               {lowStock.slice(0, 5).map(item => (
-                <div key={item.product_id || item.id} className="flex items-center justify-between p-3 rounded-xl bg-dark-bg border border-dark-border">
+                <div key={item.product_id || item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-dark-bg border border-dark-border">
                   <div>
                     <div className="font-medium text-white text-sm">{item.name}</div>
                     <div className="text-xs text-dark-muted">SKU: {item.sku} · Min: {item.min_stock || item.minStock}</div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-semibold text-amber-400">{item.quantity}</div>
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between">
+                    <div className="font-semibold text-amber-400 text-sm">{item.quantity}</div>
                     <div className="text-xs text-dark-muted">current</div>
                   </div>
                 </div>
